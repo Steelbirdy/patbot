@@ -5,7 +5,6 @@ use data::Data;
 use std::time::Duration;
 
 use poise::serenity_prelude as serenity;
-use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Result<T = (), E = Error> = std::result::Result<T, E>;
@@ -28,20 +27,16 @@ async fn data(ctx: &serenity::Context) -> Result<Data> {
     Ok(data)
 }
 
-#[tokio::main]
-async fn main() {
-    dotenv::dotenv().expect("failed to load .env file");
-
-    let subscriber = FmtSubscriber::builder()
-        .with_env_filter(EnvFilter::from_default_env())
-        .finish();
-    tracing::subscriber::set_global_default(subscriber).expect("failed to start the logger");
-
-    let token = std::env::var("DISCORD_TOKEN").expect(
-        "expected a bot token in the environment. Add the `DISCORD_TOKEN` key to the .env file",
+#[shuttle_runtime::main]
+async fn main(
+    #[shuttle_secrets::Secrets] secret_store: shuttle_secrets::SecretStore,
+) -> shuttle_serenity::ShuttleSerenity {
+    let token = secret_store.get("DISCORD_TOKEN").expect(
+        "expected a bot token in the environment. Add the `DISCORD_TOKEN` key to the Secrets.toml file",
     );
 
-    let intents = serenity::GatewayIntents::non_privileged();
+    let intents =
+        serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT;
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
@@ -64,7 +59,8 @@ async fn main() {
 
     let client = serenity::ClientBuilder::new(token, intents)
         .framework(framework)
-        .await;
+        .await
+        .expect("failed to create client");
 
-    client.unwrap().start().await.unwrap();
+    Ok(client.into())
 }
