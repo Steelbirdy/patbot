@@ -13,12 +13,17 @@ type Context<'a> = poise::Context<'a, Data, Error>;
 
 const FRODGE_GUILD_ID: serenity::GuildId = serenity::GuildId::new(300755943912636417);
 
+fn is_frodge(ctx: Context<'_>) -> bool {
+    ctx.guild_id().map_or(false, |id| id == FRODGE_GUILD_ID)
+}
+
 async fn data(ctx: &serenity::Context) -> Result<Data> {
     const ONE_DAY: Duration = Duration::from_secs(60 * 60 * 24);
 
     let mut data = Data::new(ctx).await?;
 
     data.buckets.insert("bonk", ONE_DAY);
+    data.buckets.insert("scatter", ONE_DAY * 7);
 
     Ok(data)
 }
@@ -44,6 +49,7 @@ async fn main() {
                 commands::ping(),
                 commands::quit(),
                 commands::roll(),
+                commands::scatter(),
             ],
             ..Default::default()
         })
