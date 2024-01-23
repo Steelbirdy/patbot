@@ -31,9 +31,15 @@ async fn data(ctx: &serenity::Context) -> Result<Data> {
 async fn main(
     #[shuttle_secrets::Secrets] secret_store: shuttle_secrets::SecretStore,
 ) -> shuttle_serenity::ShuttleSerenity {
-    let token = secret_store.get("DISCORD_TOKEN").expect(
-        "expected a bot token in the environment. Add the `DISCORD_TOKEN` key to the Secrets.toml file",
-    );
+    let _ = dotenv::dotenv();
+
+    let token = if let Ok(token) = std::env::var("DISCORD_TOKEN") {
+        token
+    } else {
+        secret_store.get("DISCORD_TOKEN").expect(
+            "expected a bot token in the environment. Add the `DISCORD_TOKEN` key to the Secrets.toml file",
+        )
+    };
 
     let intents =
         serenity::GatewayIntents::non_privileged() | serenity::GatewayIntents::MESSAGE_CONTENT;
