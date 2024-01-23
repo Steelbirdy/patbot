@@ -1,5 +1,10 @@
-use std::{collections::HashMap, fmt, time::{Instant, Duration}, sync::Mutex};
-use crate::{serenity, Result, Context};
+use crate::{serenity, Context, Result};
+use std::{
+    collections::HashMap,
+    fmt,
+    sync::Mutex,
+    time::{Duration, Instant},
+};
 
 pub struct Data {
     pub buckets: Buckets,
@@ -49,8 +54,7 @@ impl Bucket {
     }
 
     pub fn can_use(&self, id: u64) -> bool {
-        self.time_passed(id)
-            .map_or(false, |t| t >= self.interval)
+        self.time_passed(id).map_or(false, |t| t >= self.interval)
     }
 
     pub fn record_usage(&self, id: u64) -> Result<(), TimeLeft> {
@@ -67,11 +71,15 @@ impl Bucket {
 
     pub async fn check(&self, ctx: Context<'_>) -> bool {
         if let Err(time_left) = self.record_usage(ctx.author().id.get()) {
-            let _ = ctx.send(
-                poise::CreateReply::default()
-                    .content(format!("You must wait `{time_left}` to use that command again"))
-                    .ephemeral(true)
-            ).await;
+            let _ = ctx
+                .send(
+                    poise::CreateReply::default()
+                        .content(format!(
+                            "You must wait `{time_left}` to use that command again"
+                        ))
+                        .ephemeral(true),
+                )
+                .await;
             return false;
         }
         true

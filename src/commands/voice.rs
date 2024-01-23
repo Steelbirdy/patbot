@@ -1,4 +1,4 @@
-use crate::{Result, Context, serenity};
+use crate::{serenity, Context, Result};
 use rand::prelude::SliceRandom;
 
 const GENERAL_VOICE_CHANNEL_ID: serenity::ChannelId = serenity::ChannelId::new(300755943912636418);
@@ -10,7 +10,8 @@ async fn bonk_check(ctx: Context<'_>) -> Result<bool> {
         return Ok(false);
     }
 
-    Ok(ctx.data()
+    Ok(ctx
+        .data()
         .buckets
         .check("bonk", ctx)
         .await
@@ -27,19 +28,18 @@ pub async fn bonk(
         return Ok(());
     }
 
-    let serenity::Mention::User(user_id) = user_id
-    else {
-        ctx.send(poise::CreateReply::default()
-            .content("You need to mention a user")
-            .ephemeral(true))
-            .await?;
+    let serenity::Mention::User(user_id) = user_id else {
+        ctx.send(
+            poise::CreateReply::default()
+                .content("You need to mention a user")
+                .ephemeral(true),
+        )
+        .await?;
         return Ok(());
     };
 
     let guild = ctx.guild_id().unwrap();
-    guild
-        .move_member(ctx, user_id, BONK_CHANNEL_ID)
-        .await?;
+    guild.move_member(ctx, user_id, BONK_CHANNEL_ID).await?;
 
     ctx.say("__***BONK***__").await?;
     Ok(())
@@ -66,13 +66,14 @@ pub async fn scatter(ctx: Context<'_>) -> Result {
         return Ok(());
     }
 
-
     let (vcs, voice_states) = {
         let guild = ctx.guild().unwrap();
         let vcs: Vec<_> = guild
             .channels
             .values()
-            .filter(|ch| ch.kind == serenity::ChannelType::Voice && ch.id != GENERAL_VOICE_CHANNEL_ID)
+            .filter(|ch| {
+                ch.kind == serenity::ChannelType::Voice && ch.id != GENERAL_VOICE_CHANNEL_ID
+            })
             .map(|ch| ch.id)
             .collect();
 

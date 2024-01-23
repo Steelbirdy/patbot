@@ -1,4 +1,4 @@
-use crate::{Result, serenity, Context};
+use crate::{serenity, Context, Result};
 
 /// Rolls dice in XdY format
 #[poise::command(slash_command)]
@@ -15,10 +15,12 @@ pub async fn roll(
     let roll = match rust_dice::roll(&dice) {
         Ok(roll) => roll,
         Err(err) => {
-            ctx.send(poise::CreateReply::default()
-                .content(format!("Error: {err}"))
-                .ephemeral(true))
-                .await?;
+            ctx.send(
+                poise::CreateReply::default()
+                    .content(format!("Error: {err}"))
+                    .ephemeral(true),
+            )
+            .await?;
             return Ok(());
         }
     };
@@ -27,19 +29,23 @@ pub async fn roll(
     match stringify.stringify(&roll) {
         Ok(mut x) => {
             if x.len() > serenity::constants::MESSAGE_CODE_LIMIT {
-                x = format!("{}... = `{}`", &x[..serenity::constants::MESSAGE_CODE_LIMIT - 30], roll.total().unwrap());
+                x = format!(
+                    "{}... = `{}`",
+                    &x[..serenity::constants::MESSAGE_CODE_LIMIT - 30],
+                    roll.total().unwrap()
+                );
             }
 
-            ctx.send(poise::CreateReply::default()
-                .content(x)
-                .ephemeral(private))
+            ctx.send(poise::CreateReply::default().content(x).ephemeral(private))
                 .await?;
         }
         Err(err) => {
-            ctx.send(poise::CreateReply::default()
-                .content(format!("Error: {err}"))
-                .ephemeral(true))
-                .await?;
+            ctx.send(
+                poise::CreateReply::default()
+                    .content(format!("Error: {err}"))
+                    .ephemeral(true),
+            )
+            .await?;
         }
     }
 

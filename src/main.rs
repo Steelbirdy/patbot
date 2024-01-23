@@ -1,11 +1,11 @@
 mod commands;
 mod data;
 
-use std::time::Duration;
 use data::Data;
+use std::time::Duration;
 
-use tracing_subscriber::{EnvFilter, FmtSubscriber};
 use poise::serenity_prelude as serenity;
+use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Result<T = (), E = Error> = std::result::Result<T, E>;
@@ -37,8 +37,9 @@ async fn main() {
         .finish();
     tracing::subscriber::set_global_default(subscriber).expect("failed to start the logger");
 
-    let token = std::env::var("DISCORD_TOKEN")
-        .expect("expected a bot token in the environment. Add the `DISCORD_TOKEN` key to the .env file");
+    let token = std::env::var("DISCORD_TOKEN").expect(
+        "expected a bot token in the environment. Add the `DISCORD_TOKEN` key to the .env file",
+    );
 
     let intents = serenity::GatewayIntents::non_privileged();
 
@@ -56,7 +57,7 @@ async fn main() {
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                Ok(data(ctx).await?)
+                data(ctx).await
             })
         })
         .build();
