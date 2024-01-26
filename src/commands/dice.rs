@@ -18,7 +18,8 @@ pub async fn roll(
             ctx.send(
                 poise::CreateReply::default()
                     .content(format!("Error: {err}"))
-                    .ephemeral(true),
+                    .ephemeral(true)
+                    .reply(true),
             )
             .await?;
             return Ok(());
@@ -36,14 +37,20 @@ pub async fn roll(
                 );
             }
 
-            ctx.send(poise::CreateReply::default().content(x).ephemeral(private))
-                .await?;
+            ctx.send(
+                poise::CreateReply::default()
+                    .content(x)
+                    .ephemeral(private)
+                    .reply(true),
+            )
+            .await?;
         }
         Err(err) => {
             ctx.send(
                 poise::CreateReply::default()
                     .content(format!("Error: {err}"))
-                    .ephemeral(true),
+                    .ephemeral(true)
+                    .reply(true),
             )
             .await?;
         }

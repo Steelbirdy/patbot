@@ -1,4 +1,5 @@
 use crate::{serenity, Context, Result};
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     fmt,
@@ -6,14 +7,23 @@ use std::{
     time::{Duration, Instant},
 };
 
+const COUNTERS_FILE: &str = "counters.json";
+
 pub struct Data {
     pub buckets: Buckets,
+    pub counters: Mutex<Counters>,
 }
 
 impl Data {
     pub async fn new(_ctx: &serenity::Context) -> Result<Self> {
+        let counters = std::fs::read_to_string(COUNTERS_FILE)
+            .ok()
+            .and_then(|str| serde_json::from_str(&str).ok())
+            .unwrap_or_default();
+
         Ok(Self {
             buckets: Buckets::default(),
+            counters,
         })
     }
 }
@@ -30,12 +40,8 @@ impl Buckets {
         self
     }
 
-    pub fn get(&self, name: &'static str) -> Option<&Bucket> {
-        self.inner.get(name)
-    }
-
     pub async fn check(&self, name: &'static str, ctx: Context<'_>) -> Option<bool> {
-        let bucket = self.get(name)?;
+        let bucket = self.inner.get(name)?;
         Some(bucket.check(ctx).await)
     }
 }
@@ -51,10 +57,6 @@ impl Bucket {
             last_usage: Mutex::default(),
             interval,
         }
-    }
-
-    pub fn can_use(&self, id: u64) -> bool {
-        self.time_passed(id).map_or(false, |t| t >= self.interval)
     }
 
     pub fn record_usage(&self, id: u64) -> Result<(), TimeLeft> {
@@ -92,7 +94,7 @@ impl Bucket {
 
     fn time_passed(&self, id: u64) -> Option<Duration> {
         let last_usage = self.get(id)?;
-        Some(Instant::now() - last_usage)
+        Some(last_usage.elapsed())
     }
 
     fn insert_now(&self, id: u64) {
@@ -138,5 +140,48 @@ impl fmt::Display for TimeLeft {
         } else {
             write!(f, "{}", parts.join(", "))
         }
+    }
+}
+
+#[derive(Default, Serialize, Deserialize)]
+pub struct Counters {
+    inner: HashMap<String, u32>,
+}
+
+impl Counters {
+    /// Returns true if the counter did not already exist
+    pub fn create(&mut self, name: impl ToString) -> bool {
+        let name = name.to_string();
+        let is_new_counter = !self.inner.contains_key(&name);
+        if is_new_counter {
+            self.inner.insert(name, 0);
+            self.write_to_file();
+        }
+        is_new_counter
+    }
+
+    pub fn delete(&mut self, name: impl AsRef<str>) -> bool {
+        self.inner.remove(name.as_ref()).is_some()
+    }
+
+    /// Returns the new value
+    pub fn add(&mut self, name: impl AsRef<str>, n: u32) -> Option<u32> {
+        let name = name.as_ref();
+        let value = {
+            let counter = self.inner.get_mut(name)?;
+            *counter += n;
+            *counter
+        };
+        self.write_to_file();
+        Some(value)
+    }
+
+    pub fn get(&self, name: impl AsRef<str>) -> Option<u32> {
+        self.inner.get(name.as_ref()).copied()
+    }
+
+    fn write_to_file(&self) {
+        let serialized = serde_json::to_string(self).unwrap();
+        std::fs::write(COUNTERS_FILE, serialized).unwrap();
     }
 }

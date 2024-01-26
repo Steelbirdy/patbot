@@ -32,7 +32,8 @@ pub async fn bonk(
         ctx.send(
             poise::CreateReply::default()
                 .content("You need to mention a user")
-                .ephemeral(true),
+                .ephemeral(true)
+                .reply(true),
         )
         .await?;
         return Ok(());
@@ -41,7 +42,7 @@ pub async fn bonk(
     let guild = ctx.guild_id().unwrap();
     guild.move_member(ctx, user_id, BONK_CHANNEL_ID).await?;
 
-    ctx.say("__***BONK***__").await?;
+    ctx.reply("__***BONK***__").await?;
     Ok(())
 }
 
@@ -94,7 +95,7 @@ pub async fn scatter(ctx: Context<'_>) -> Result {
         guild_id.move_member(ctx, member, move_to).await?;
     }
 
-    ctx.say("__***SCATTER!!!***__").await?;
+    ctx.reply("__***SCATTER!!!***__").await?;
 
     Ok(())
 }

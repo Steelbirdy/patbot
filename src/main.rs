@@ -48,6 +48,7 @@ async fn main(
         .options(poise::FrameworkOptions {
             commands: vec![
                 commands::bonk(),
+                commands::counter(),
                 commands::ping(),
                 commands::quit(),
                 commands::roll(),
