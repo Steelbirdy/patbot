@@ -11,9 +11,18 @@ type Result<T = (), E = Error> = std::result::Result<T, E>;
 type Context<'a> = poise::Context<'a, Data, Error>;
 
 const FRODGE_GUILD_ID: serenity::GuildId = serenity::GuildId::new(300755943912636417);
+const TESTING_GUILD_ID: serenity::GuildId = serenity::GuildId::new(765314921151332464);
 
 fn is_frodge(ctx: Context<'_>) -> bool {
-    ctx.guild_id().map_or(false, |id| id == FRODGE_GUILD_ID)
+    ctx.guild_id() == Some(FRODGE_GUILD_ID)
+}
+
+fn is_testing_server(ctx: Context<'_>) -> bool {
+    ctx.guild_id() == Some(TESTING_GUILD_ID)
+}
+
+fn is_frodge_or_testing(ctx: Context<'_>) -> bool {
+    is_frodge(ctx) || is_testing_server(ctx)
 }
 
 async fn data(ctx: &serenity::Context) -> Result<Data> {

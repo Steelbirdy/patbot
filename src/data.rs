@@ -40,9 +40,21 @@ impl Buckets {
         self
     }
 
-    pub async fn check(&self, name: &'static str, ctx: Context<'_>) -> Option<bool> {
+    pub fn check(&self, name: &'static str, ctx: Context<'_>) -> Option<Result<(), TimeLeft>> {
         let bucket = self.inner.get(name)?;
-        Some(bucket.check(ctx).await)
+        let id = ctx.author().id.get();
+        Some(bucket.check(id))
+    }
+
+    pub fn record_usage(&self, name: &'static str, ctx: Context<'_>) {
+        let bucket = self
+            .inner
+            .get(name)
+            .unwrap_or_else(|| panic!("expected a bucket named `{name}`"));
+        let id = ctx.author().id.get();
+        bucket
+            .record_usage(id)
+            .expect("expected a valid command usage");
     }
 }
 
@@ -60,40 +72,27 @@ impl Bucket {
     }
 
     pub fn record_usage(&self, id: u64) -> Result<(), TimeLeft> {
+        let ret = self.check(id);
+        if ret.is_ok() {
+            self.insert_now(id);
+        }
+        ret
+    }
+
+    pub fn check(&self, id: u64) -> Result<(), TimeLeft> {
         match self.time_passed(id) {
             Some(time_passed) if time_passed < self.interval => {
                 Err(TimeLeft(self.interval - time_passed))
             }
-            _ => {
-                self.insert_now(id);
-                Ok(())
-            }
+            _ => Ok(()),
         }
-    }
-
-    pub async fn check(&self, ctx: Context<'_>) -> bool {
-        if let Err(time_left) = self.record_usage(ctx.author().id.get()) {
-            let _ = ctx
-                .send(
-                    poise::CreateReply::default()
-                        .content(format!(
-                            "You must wait `{time_left}` to use that command again"
-                        ))
-                        .ephemeral(true),
-                )
-                .await;
-            return false;
-        }
-        true
-    }
-
-    fn get(&self, id: u64) -> Option<Instant> {
-        let lock = self.last_usage.lock().unwrap();
-        lock.get(&id).copied()
     }
 
     fn time_passed(&self, id: u64) -> Option<Duration> {
-        let last_usage = self.get(id)?;
+        let last_usage = {
+            let lock = self.last_usage.lock().unwrap();
+            lock.get(&id).copied()?
+        };
         Some(last_usage.elapsed())
     }
 
@@ -103,7 +102,21 @@ impl Bucket {
     }
 }
 
+#[derive(Debug)]
 pub struct TimeLeft(Duration);
+
+impl TimeLeft {
+    pub async fn send_cooldown_message(&self, ctx: Context<'_>) -> Result {
+        ctx.send(
+            poise::CreateReply::default()
+                .content(format!("You must wait `{self}` to use that command again."))
+                .reply(true)
+                .ephemeral(true),
+        )
+        .await?;
+        Ok(())
+    }
+}
 
 impl fmt::Display for TimeLeft {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -161,7 +174,9 @@ impl Counters {
     }
 
     pub fn delete(&mut self, name: impl AsRef<str>) -> bool {
-        self.inner.remove(name.as_ref()).is_some()
+        let ret = self.inner.remove(name.as_ref()).is_some();
+        self.write_to_file();
+        ret
     }
 
     /// Returns the new value
