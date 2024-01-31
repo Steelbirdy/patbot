@@ -7,11 +7,7 @@ pub async fn counter(ctx: Context<'_>, name: String) -> Result {
 
 #[poise::command(slash_command)]
 pub async fn add(ctx: Context<'_>, name: String, n: u32) -> Result {
-    let counters = &ctx.data().counters;
-    let new_value = {
-        let mut counters = counters.lock().unwrap();
-        counters.add(&name, n)
-    };
+    let new_value = &ctx.data().use_counters(|c| c.add(&name, n));
 
     match new_value {
         Some(value) => {
@@ -36,11 +32,7 @@ pub async fn get(ctx: Context<'_>, name: String) -> Result {
 }
 
 async fn get_inner(ctx: Context<'_>, name: String) -> Result {
-    let counters = &ctx.data().counters;
-    let value = {
-        let counters = counters.lock().unwrap();
-        counters.get(&name)
-    };
+    let value = ctx.data().use_counters(|c| c.get(&name));
     match value {
         Some(value) => {
             ctx.reply(format!(
@@ -61,11 +53,7 @@ async fn get_inner(ctx: Context<'_>, name: String) -> Result {
 
 #[poise::command(slash_command)]
 pub async fn create(ctx: Context<'_>, name: String) -> Result {
-    let counters = &ctx.data().counters;
-    let already_existed = {
-        let mut counters = counters.lock().unwrap();
-        !counters.create(&name)
-    };
+    let already_existed = ctx.data().use_counters(|c| !c.create(&name));
     if already_existed {
         ctx.send(
             poise::CreateReply::default()
@@ -82,12 +70,8 @@ pub async fn create(ctx: Context<'_>, name: String) -> Result {
 
 #[poise::command(slash_command, owners_only)]
 pub async fn delete(ctx: Context<'_>, name: String) -> Result {
-    let counters = &ctx.data().counters;
-    let was_removed = {
-        let mut counters = counters.lock().unwrap();
-        counters.delete(&name)
-    };
-    if was_removed {
+    let was_deleted = ctx.data().use_counters(|c| c.delete(&name));
+    if was_deleted {
         ctx.reply(format!("Deleted counter `{name}`.")).await?;
     } else {
         ctx.send(

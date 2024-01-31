@@ -2,9 +2,10 @@ mod commands;
 mod data;
 
 use data::Data;
-use std::time::Duration;
 
 use poise::serenity_prelude as serenity;
+use shuttle_persist::PersistInstance;
+use shuttle_secrets::SecretStore;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 type Result<T = (), E = Error> = std::result::Result<T, E>;
@@ -25,20 +26,10 @@ fn is_frodge_or_testing(ctx: Context<'_>) -> bool {
     is_frodge(ctx) || is_testing_server(ctx)
 }
 
-async fn data(ctx: &serenity::Context) -> Result<Data> {
-    const ONE_DAY: Duration = Duration::from_secs(60 * 60 * 24);
-
-    let mut data = Data::new(ctx).await?;
-
-    data.buckets.insert("bonk", ONE_DAY);
-    data.buckets.insert("scatter", ONE_DAY * 7);
-
-    Ok(data)
-}
-
 #[shuttle_runtime::main]
 async fn main(
-    #[shuttle_secrets::Secrets] secret_store: shuttle_secrets::SecretStore,
+    #[shuttle_persist::Persist] persist: PersistInstance,
+    #[shuttle_secrets::Secrets] secret_store: SecretStore,
 ) -> shuttle_serenity::ShuttleSerenity {
     let _ = dotenv::dotenv();
 
@@ -68,7 +59,7 @@ async fn main(
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                data(ctx).await
+                Data::new(ctx, persist).await
             })
         })
         .build();
@@ -76,7 +67,7 @@ async fn main(
     let client = serenity::ClientBuilder::new(token, intents)
         .framework(framework)
         .await
-        .expect("failed to create client");
+        .map_err(shuttle_runtime::CustomError::new)?;
 
     Ok(client.into())
 }

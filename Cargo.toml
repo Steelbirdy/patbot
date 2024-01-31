@@ -12,7 +12,9 @@ reqwest = "0.11"
 rust-dice = { git = "https://github.com/Steelbirdy/rust-dice", branch = "dev" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-shuttle-runtime = "0.36"
-shuttle-secrets = "0.36"
-shuttle-serenity = { version = "0.36", default-features = false, features = ["serenity-0-12-rustls_backend"] }
+shuttle-persist = "0.37"
+shuttle-runtime = "0.37"
+shuttle-secrets = "0.37"
+shuttle-serenity = "0.37"
+time = "0.3"
 tracing = "0.1"

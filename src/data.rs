@@ -1,55 +1,87 @@
 use crate::{serenity, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::HashMap,
-    fmt,
-    sync::Mutex,
-    time::{Duration, Instant},
-};
-
-const COUNTERS_FILE: &str = "counters.json";
+use shuttle_persist::PersistInstance;
+use std::{collections::HashMap, fmt, sync::Mutex};
+use time::{Duration, OffsetDateTime};
 
 pub struct Data {
-    pub buckets: Buckets,
-    pub counters: Mutex<Counters>,
+    writer: PersistInstance,
+    buckets: Mutex<Buckets>,
+    counters: Mutex<Counters>,
 }
 
 impl Data {
-    pub async fn new(_ctx: &serenity::Context) -> Result<Self> {
-        let counters = std::fs::read_to_string(COUNTERS_FILE)
-            .ok()
-            .and_then(|str| serde_json::from_str(&str).ok())
-            .unwrap_or_default();
+    pub async fn new(_ctx: &serenity::Context, persist: PersistInstance) -> Result<Self> {
+        let counters = match persist.load("counters") {
+            Ok(x) => Mutex::new(x),
+            Err(_) => Default::default(),
+        };
+        let buckets = match persist.load("buckets") {
+            Ok(x) => Mutex::new(x),
+            Err(_) => Default::default(),
+        };
 
         Ok(Self {
-            buckets: Buckets::default(),
+            writer: persist,
+            buckets,
             counters,
         })
     }
+
+    pub fn use_counters<F, T>(&self, f: F) -> T
+    where
+        F: FnOnce(&mut Counters) -> T,
+    {
+        let (ret, counters_clone) = {
+            let mut counters = self.counters.lock().unwrap();
+            let ret = f(&mut counters);
+            (ret, counters.clone())
+        };
+        self.writer.save("counters", counters_clone).unwrap();
+        ret
+    }
+
+    pub fn use_buckets<F, T>(&self, f: F) -> T
+    where
+        F: FnOnce(&mut Buckets) -> T,
+    {
+        let (ret, buckets_clone) = {
+            let mut buckets = self.buckets.lock().unwrap();
+            let ret = f(&mut buckets);
+            (ret, buckets.clone())
+        };
+        self.writer.save("buckets", buckets_clone).unwrap();
+        ret
+    }
 }
 
-#[derive(Default)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Buckets {
-    inner: HashMap<&'static str, Bucket>,
+    inner: HashMap<String, Bucket>,
+}
+
+impl Default for Buckets {
+    fn default() -> Self {
+        const ONE_DAY: Duration = Duration::new(60 * 60 * 24, 0);
+
+        let mut inner = HashMap::default();
+        inner.insert("bonk".to_string(), Bucket::new(ONE_DAY));
+        inner.insert("scatter".to_string(), Bucket::new(ONE_DAY * 7));
+        Self { inner }
+    }
 }
 
 impl Buckets {
-    pub fn insert(&mut self, name: &'static str, interval: Duration) -> &mut Self {
-        let bucket = Bucket::new(interval);
-        self.inner.insert(name, bucket);
-        self
-    }
-
     pub fn check(&self, name: &'static str, ctx: Context<'_>) -> Option<Result<(), TimeLeft>> {
         let bucket = self.inner.get(name)?;
         let id = ctx.author().id.get();
         Some(bucket.check(id))
     }
 
-    pub fn record_usage(&self, name: &'static str, ctx: Context<'_>) {
+    pub fn record_usage(&mut self, name: &'static str, ctx: Context<'_>) {
         let bucket = self
             .inner
-            .get(name)
+            .get_mut(name)
             .unwrap_or_else(|| panic!("expected a bucket named `{name}`"));
         let id = ctx.author().id.get();
         bucket
@@ -58,20 +90,21 @@ impl Buckets {
     }
 }
 
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Bucket {
-    last_usage: Mutex<HashMap<u64, Instant>>,
+    last_usage: HashMap<u64, OffsetDateTime>,
     interval: Duration,
 }
 
 impl Bucket {
     pub fn new(interval: Duration) -> Self {
         Self {
-            last_usage: Mutex::default(),
+            last_usage: Default::default(),
             interval,
         }
     }
 
-    pub fn record_usage(&self, id: u64) -> Result<(), TimeLeft> {
+    pub fn record_usage(&mut self, id: u64) -> Result<(), TimeLeft> {
         let ret = self.check(id);
         if ret.is_ok() {
             self.insert_now(id);
@@ -89,16 +122,12 @@ impl Bucket {
     }
 
     fn time_passed(&self, id: u64) -> Option<Duration> {
-        let last_usage = {
-            let lock = self.last_usage.lock().unwrap();
-            lock.get(&id).copied()?
-        };
-        Some(last_usage.elapsed())
+        let last_usage = self.last_usage.get(&id)?;
+        Some(OffsetDateTime::now_utc() - *last_usage)
     }
 
-    fn insert_now(&self, id: u64) {
-        let mut lock = self.last_usage.lock().unwrap();
-        lock.insert(id, Instant::now());
+    fn insert_now(&mut self, id: u64) {
+        self.last_usage.insert(id, OffsetDateTime::now_utc());
     }
 }
 
@@ -124,7 +153,7 @@ impl fmt::Display for TimeLeft {
 
         let div_mod = |a: u64, b: u64| (a / b, a % b);
 
-        let (minutes, seconds) = div_mod(duration.as_secs(), 60);
+        let (minutes, seconds) = div_mod(duration.whole_seconds() as _, 60);
         let (hours, minutes) = div_mod(minutes, 60);
         let (days, hours) = div_mod(hours, 24);
 
@@ -156,7 +185,7 @@ impl fmt::Display for TimeLeft {
     }
 }
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Clone, Serialize, Deserialize)]
 pub struct Counters {
     inner: HashMap<String, u32>,
 }
@@ -168,14 +197,12 @@ impl Counters {
         let is_new_counter = !self.inner.contains_key(&name);
         if is_new_counter {
             self.inner.insert(name, 0);
-            self.write_to_file();
         }
         is_new_counter
     }
 
     pub fn delete(&mut self, name: impl AsRef<str>) -> bool {
         let ret = self.inner.remove(name.as_ref()).is_some();
-        self.write_to_file();
         ret
     }
 
@@ -187,16 +214,10 @@ impl Counters {
             *counter += n;
             *counter
         };
-        self.write_to_file();
         Some(value)
     }
 
     pub fn get(&self, name: impl AsRef<str>) -> Option<u32> {
         self.inner.get(name.as_ref()).copied()
-    }
-
-    fn write_to_file(&self) {
-        let serialized = serde_json::to_string(self).unwrap();
-        std::fs::write(COUNTERS_FILE, serialized).unwrap();
     }
 }

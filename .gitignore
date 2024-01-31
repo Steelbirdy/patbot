@@ -2,5 +2,6 @@ target
 Cargo.lock
 .env
 counters.json
+.shuttle-storage
 Secrets.toml
 /.idea

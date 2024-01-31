@@ -42,8 +42,7 @@ async fn bucket_check(ctx: Context<'_>, bucket_name: &'static str) -> Result<boo
 
     let res = ctx
         .data()
-        .buckets
-        .check(bucket_name, ctx)
+        .use_buckets(|b| b.check(bucket_name, ctx))
         .unwrap_or_else(|| panic!("expected bucket named `{bucket_name}`"));
 
     Ok(match res {
@@ -81,7 +80,7 @@ pub async fn bonk(
     guild.move_member(ctx, user_id, bonk_channel_id).await?;
 
     ctx.reply("__***BONK***__").await?;
-    ctx.data().buckets.record_usage("bonk", ctx);
+    ctx.data().use_buckets(|b| b.record_usage("bonk", ctx));
 
     Ok(())
 }
@@ -139,7 +138,7 @@ pub async fn scatter(ctx: Context<'_>) -> Result {
     }
 
     ctx.reply("__***SCATTER!!!***__").await?;
-    ctx.data().buckets.record_usage("scatter", ctx);
+    ctx.data().use_buckets(|b| b.record_usage("scatter", ctx));
 
     Ok(())
 }
