@@ -104,6 +104,7 @@ async fn main(
                 commands::counter(),
                 commands::ping(),
                 commands::quit(),
+                commands::register(),
                 commands::roll(),
                 commands::scatter(),
             ],

@@ -4,12 +4,12 @@ use crate::{serenity, Context, Result};
 #[poise::command(slash_command)]
 pub async fn roll(
     ctx: Context<'_>,
-    #[description = "The roll will be visible only to you"]
-    #[flag]
-    private: bool,
     #[description = "The dice to roll"]
     #[rest]
     dice: Option<String>,
+    #[description = "The roll will be visible only to you"]
+    #[flag]
+    private: bool,
 ) -> Result {
     let dice = dice.unwrap_or_else(|| String::from("1d20"));
     let roll = match rust_dice::roll(&dice) {
