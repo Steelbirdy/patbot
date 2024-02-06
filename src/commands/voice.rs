@@ -58,20 +58,21 @@ async fn bucket_check(ctx: Context<'_>, bucket_name: &'static str) -> Result<boo
 #[poise::command(slash_command)]
 pub async fn bonk(
     ctx: Context<'_>,
-    #[description = "Mention the user to bonk"] who: serenity::Mention,
+    #[description = "Mention the user to bonk"]
+    #[rest]
+    who: String,
 ) -> Result {
     if !bucket_check(ctx, "bonk").await? {
         return Ok(());
     }
 
-    let serenity::Mention::User(user_id) = who else {
+    let Some(user_id) = crate::parse_frodge_member(&who) else {
         ctx.send(
             poise::CreateReply::default()
-                .content("You need to mention a user")
+                .content("You need to specify who to bonk. This can be done by mentioning them or their name role, or just giving their name.")
                 .ephemeral(true)
-                .reply(true),
-        )
-        .await?;
+                .reply(true)
+        ).await?;
         return Ok(());
     };
 
