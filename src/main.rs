@@ -102,6 +102,7 @@ async fn main(
             commands: vec![
                 commands::bonk(),
                 commands::counter(),
+                commands::gazoo(),
                 commands::ping(),
                 commands::quit(),
                 commands::register(),
