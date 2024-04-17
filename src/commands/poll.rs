@@ -1,17 +1,30 @@
 use crate::{serenity, ApplicationContext, Result};
 use parse_display::FromStr;
 
-const OPTION_EMOJIS: &[&str] = &[
-    ":one:", ":two:", ":three:", ":four:", ":five:", ":six:", ":seven:", ":eight:", ":nine:",
-    ":ten:",
+const CHOICE_EMOJIS: &[&str] = &[
+    "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟",
 ];
+const MAX_CHOICES: usize = CHOICE_EMOJIS.len();
 
 #[poise::command(slash_command)]
 pub async fn poll(ctx: ApplicationContext<'_>) -> Result {
     // This command cannot be used in DMs
     if ctx.guild_id().is_none() {
-        let _ = ctx.reply(":x: This command cannot be used in a DM").await;
+        let _ = ctx.reply("This command cannot be used in a DM").await;
         return Ok(());
+    }
+
+    macro_rules! send_error {
+        ($error_message:literal) => {{
+            let _ = ctx.send(
+                poise::CreateReply::default()
+                    .content(concat!(":x: ", $error_message))
+                    .reply(true)
+                    .ephemeral(true)
+            )
+            .await;
+            return Ok(());
+        }};
     }
 
     // Create the poll modal
@@ -27,35 +40,36 @@ pub async fn poll(ctx: ApplicationContext<'_>) -> Result {
 
     // Attempt to parse the poll duration entered by the user
     // TODO: Better error message
+    let duration = duration.unwrap_or_else(|| String::from("24 hours"));
     let Ok(duration @ PollDuration { .. }) = duration.parse() else {
-        let _ = ctx
-            .send(
-                poise::CreateReply::default()
-                    .content(":x: I didn't understand the duration that you entered.")
-                    .reply(true)
-                    .ephemeral(true),
-            )
-            .await;
-        return Ok(());
+        send_error!("I didn't understand the duration that you entered.")
     };
 
     // If the user entered something like "0 minutes", we can't make the poll
     if duration.amount == 0 {
-        let _ = ctx
-            .send(
-                poise::CreateReply::default()
-                    .content(":x: The duration must be greater than 0.")
-                    .reply(true)
-                    .ephemeral(true),
-            )
-            .await;
-        return Ok(());
+        send_error!("The duration must be greater than 0.");
     }
 
+    // If the user entered more choices than we allow, we can't make the poll
     let choices: Vec<_> = choices.lines().collect();
-    let embed = format_poll_embed(ctx, &title, &choices, duration).await;
+    if choices.len() > MAX_CHOICES {
+        send_error!("Polls can have at most 10 choices.");
+    }
 
-    ctx.send(poise::CreateReply::default().embed(embed)).await?;
+    // Send the poll message
+    let embed = format_poll_embed(ctx, &title, &choices, duration).await;
+    let action_rows = format_poll_action_rows(ctx, &choices);
+    ctx.send(poise::CreateReply::default().embed(embed).components(action_rows)).await?;
+
+    // let mut votes = vec![0_u32; choices.len()];
+    // let custom_id_prefix = ctx.id().to_string();
+    // let collector = serenity::ComponentInteractionCollector::new(ctx)
+    //     .author_id(ctx.author().id)
+    //     .channel_id(ctx.channel_id())
+    //     .timeout(duration.into())
+    //     .filter(move |mci| mci.data.custom_id.starts_with(&custom_id_prefix))
+    //     .
+
     Ok(())
 }
 
@@ -86,7 +100,7 @@ async fn format_poll_embed(
     let fields = choices
         .iter()
         .enumerate()
-        .map(|(i, choice)| (format!("{} {choice}", OPTION_EMOJIS[i]), "", false));
+        .map(|(i, choice)| (format!("{}  {choice}", CHOICE_EMOJIS[i]), "", false));
 
     // Eastern Standard Time
     let time_zone = chrono::FixedOffset::west_opt(4 * 60 * 60).unwrap();
@@ -107,19 +121,77 @@ async fn format_poll_embed(
         .footer(footer)
 }
 
+fn format_poll_action_rows(
+    ctx: ApplicationContext<'_>,
+    choices: &[&str],
+) -> Vec<serenity::CreateActionRow> {
+    const MAX_BUTTONS_PER_ROW: usize = 5;
+
+    fn take_button(button: &mut serenity::CreateButton) -> serenity::CreateButton {
+        std::mem::replace(button, serenity::CreateButton::new(""))
+    }
+
+    let id = ctx.id();
+
+    // Create all the choice buttons in a list
+    let mut buttons: Vec<_> = choices
+        .iter().enumerate()
+        .map(|(i, _)| format_poll_choice_button(id, i))
+        .collect();
+
+    // Split the choice buttons into rows
+    let mut rows: Vec<_> = buttons
+        .chunks_mut(MAX_BUTTONS_PER_ROW)
+        .map(|bt| {
+            let buttons = bt
+                .iter_mut()
+                .map(take_button)
+                .collect();
+            serenity::CreateActionRow::Buttons(buttons)
+        })
+        .collect();
+
+    // Add the cancel button in its own row
+    let cancel_poll_button = serenity::CreateButton::new(format_poll_button_custom_id(id, "cancel", None))
+        .emoji("✖️".parse::<serenity::ReactionType>().unwrap())
+        .label("Cancel poll")
+        .style(serenity::ButtonStyle::Danger);
+    rows.push(serenity::CreateActionRow::Buttons(vec![cancel_poll_button]));
+
+    rows
+}
+
+fn format_poll_choice_button(
+    ctx_id: u64,
+    index: usize,
+) -> serenity::CreateButton {
+    let custom_id = format_poll_button_custom_id(ctx_id, "choice", Some(index));
+    let emoji = CHOICE_EMOJIS[index];
+    serenity::CreateButton::new(custom_id)
+        .emoji(emoji.parse::<serenity::ReactionType>().unwrap())
+        .style(serenity::ButtonStyle::Primary)
+}
+
+fn format_poll_button_custom_id(ctx_id: u64, kind: &str, index: Option<usize>) -> String {
+    match index {
+        Some(i) => format!("{ctx_id}_poll_{kind}_{i}"),
+        None => format!("{ctx_id}_poll_{kind}"),
+    }
+}
+
 #[derive(poise::Modal, Debug)]
 struct PollModal {
     #[name = "Title"]
-    #[placeholder = "Enter poll title here."]
+    #[placeholder = "Enter poll title here"]
     #[max_length = 250]
     title: String,
     #[name = "Options"]
-    #[placeholder = "Enter poll options here, one on each line (maximum of 10)."]
+    #[placeholder = "Enter poll options here, one on each line (maximum of 10)"]
     #[paragraph]
     choices: String,
     #[name = "Duration"]
-    #[placeholder = r#""30 minutes", "6 hours", "1 day", etc. Defaults to 24 hours."#]
-    duration: String,
+    #[placeholder = r#""30 minutes", "6 hours", "1 day", etc. Defaults to 24 hours"#]
+    duration: Option<String>,
 }
 
 #[derive(FromStr, Copy, Clone)]
@@ -149,6 +221,18 @@ impl From<PollDuration> for chrono::Duration {
             PollDurationUnit::Hour => chrono::Duration::hours(amount.into()),
             PollDurationUnit::Day => chrono::Duration::days(amount.into()),
         }
+    }
+}
+
+impl From<PollDuration> for std::time::Duration {
+    fn from(value: PollDuration) -> Self {
+        let PollDuration { amount, unit } = value;
+        let conversion = match unit {
+            PollDurationUnit::Minute => 60,
+            PollDurationUnit::Hour => 60 * 60,
+            PollDurationUnit::Day => 60 * 60 * 24,
+        };
+        std::time::Duration::from_secs(u64::from(amount) * conversion)
     }
 }
 
