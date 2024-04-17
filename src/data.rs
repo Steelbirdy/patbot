@@ -10,8 +10,18 @@ use time::{Duration, OffsetDateTime};
 pub struct Data {
     writer: PersistInstance,
     bot_color: Colour,
+    poll_mode: Mutex<PollMode>,
     buckets: Mutex<Buckets>,
     counters: Mutex<Counters>,
+}
+
+#[derive(poise::ChoiceParameter, Default, Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub enum PollMode {
+    #[default]
+    #[name = "buttons"]
+    Buttons,
+    #[name = "menu"]
+    Menu,
 }
 
 impl Data {
@@ -35,6 +45,7 @@ impl Data {
         Ok(Self {
             writer: persist,
             bot_color,
+            poll_mode: Default::default(),
             buckets,
             counters,
         })
@@ -42,6 +53,14 @@ impl Data {
 
     pub fn bot_color(&self) -> Colour {
         self.bot_color
+    }
+
+    pub fn poll_mode(&self) -> PollMode {
+        *self.poll_mode.lock().unwrap()
+    }
+
+    pub fn set_poll_mode(&self, mode: PollMode) {
+        *self.poll_mode.lock().unwrap() = mode;
     }
 
     pub fn use_counters<F, T>(&self, f: F) -> T

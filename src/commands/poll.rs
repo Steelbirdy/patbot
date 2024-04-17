@@ -1,12 +1,23 @@
-use crate::{serenity, ApplicationContext, Result};
+use crate::{data::PollMode, serenity, ApplicationContext, Result};
 use parse_display::FromStr;
 
-const CHOICE_EMOJIS: &[&str] = &[
-    "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟",
-];
+const CHOICE_EMOJIS: &[&str] = &["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"];
 const MAX_CHOICES: usize = CHOICE_EMOJIS.len();
 
-#[poise::command(slash_command)]
+#[poise::command(slash_command, owners_only)]
+pub async fn set_poll_mode(ctx: ApplicationContext<'_>, mode: PollMode) -> Result {
+    ctx.data().set_poll_mode(mode);
+    ctx.send(
+        poise::CreateReply::default()
+            .content(":white_check_mark: Successfully changed the poll mode")
+            .reply(true)
+            .ephemeral(true),
+    )
+    .await?;
+    Ok(())
+}
+
+#[poise::command(slash_command, guild_only)]
 pub async fn poll(ctx: ApplicationContext<'_>) -> Result {
     // This command cannot be used in DMs
     if ctx.guild_id().is_none() {
@@ -16,13 +27,14 @@ pub async fn poll(ctx: ApplicationContext<'_>) -> Result {
 
     macro_rules! send_error {
         ($error_message:literal) => {{
-            let _ = ctx.send(
-                poise::CreateReply::default()
-                    .content(concat!(":x: ", $error_message))
-                    .reply(true)
-                    .ephemeral(true)
-            )
-            .await;
+            let _ = ctx
+                .send(
+                    poise::CreateReply::default()
+                        .content(concat!(":x: ", $error_message))
+                        .reply(true)
+                        .ephemeral(true),
+                )
+                .await;
             return Ok(());
         }};
     }
@@ -56,10 +68,22 @@ pub async fn poll(ctx: ApplicationContext<'_>) -> Result {
         send_error!("Polls can have at most 10 choices.");
     }
 
-    // Send the poll message
+    let _ = ctx
+        .send(
+            poise::CreateReply::default()
+                .content(":white_check_mark: Creating poll...")
+                .reply(true)
+                .ephemeral(true),
+        )
+        .await;
+
+    // Build the poll message
     let embed = format_poll_embed(ctx, &title, &choices, duration).await;
     let action_rows = format_poll_action_rows(ctx, &choices);
-    ctx.send(poise::CreateReply::default().embed(embed).components(action_rows)).await?;
+    let message_builder = serenity::CreateMessage::default()
+        .embed(embed)
+        .components(action_rows);
+    let _message = ctx.channel_id().send_message(ctx, message_builder).await?;
 
     // let mut votes = vec![0_u32; choices.len()];
     // let custom_id_prefix = ctx.id().to_string();
@@ -102,13 +126,10 @@ async fn format_poll_embed(
         .enumerate()
         .map(|(i, choice)| (format!("{}  {choice}", CHOICE_EMOJIS[i]), "", false));
 
-    // Eastern Standard Time
+    // Format the poll expiration time
     let time_zone = chrono::FixedOffset::west_opt(4 * 60 * 60).unwrap();
-    // Get the current time in EST
     let start_time = chrono::Utc::now().with_timezone(&time_zone);
-    // Add the poll duration to get the time at which the poll expires in EST
     let expiration_time = start_time.checked_add_signed(duration.into()).unwrap();
-    // Format the expiration time like ex. 3:14 PM EST on 15 September 2024
     let formatted_expiration_time = expiration_time.format("%-I:%M %p EST on %e %B %Y");
     // Format the footer as "Closes at <EXPIRATION_TIME>"
     let footer = serenity::CreateEmbedFooter::new(format!("Closes at {formatted_expiration_time}"));
@@ -133,38 +154,76 @@ fn format_poll_action_rows(
 
     let id = ctx.id();
 
-    // Create all the choice buttons in a list
-    let mut buttons: Vec<_> = choices
-        .iter().enumerate()
-        .map(|(i, _)| format_poll_choice_button(id, i))
-        .collect();
-
-    // Split the choice buttons into rows
-    let mut rows: Vec<_> = buttons
-        .chunks_mut(MAX_BUTTONS_PER_ROW)
-        .map(|bt| {
-            let buttons = bt
-                .iter_mut()
-                .map(take_button)
+    let mut rows: Vec<_> = match ctx.data().poll_mode() {
+        PollMode::Buttons => {
+            // Create all the choice buttons in a list
+            let mut buttons: Vec<_> = choices
+                .iter()
+                .enumerate()
+                .map(|(i, _)| format_poll_choice_button(id, i))
                 .collect();
-            serenity::CreateActionRow::Buttons(buttons)
-        })
-        .collect();
+
+            // Split the choice buttons into rows
+            buttons
+                .chunks_mut(MAX_BUTTONS_PER_ROW)
+                .map(|bt| {
+                    let buttons = bt.iter_mut().map(take_button).collect();
+                    serenity::CreateActionRow::Buttons(buttons)
+                })
+                .collect()
+        }
+        PollMode::Menu => {
+            let select_menu = format_poll_select_menu(ctx, choices);
+            vec![serenity::CreateActionRow::SelectMenu(select_menu)]
+        }
+    };
 
     // Add the cancel button in its own row
-    let cancel_poll_button = serenity::CreateButton::new(format_poll_button_custom_id(id, "cancel", None))
-        .emoji("✖️".parse::<serenity::ReactionType>().unwrap())
-        .label("Cancel poll")
-        .style(serenity::ButtonStyle::Danger);
+    let cancel_poll_button =
+        serenity::CreateButton::new(format_poll_button_custom_id(id, "cancel", None))
+            .emoji("✖️".parse::<serenity::ReactionType>().unwrap())
+            .label("Cancel poll")
+            .style(serenity::ButtonStyle::Danger);
     rows.push(serenity::CreateActionRow::Buttons(vec![cancel_poll_button]));
 
     rows
 }
 
-fn format_poll_choice_button(
-    ctx_id: u64,
-    index: usize,
-) -> serenity::CreateButton {
+fn format_poll_select_menu(
+    ctx: ApplicationContext<'_>,
+    choices: &[&str],
+) -> serenity::CreateSelectMenu {
+    const LABEL_MAX_LEN: usize = 100;
+
+    fn truncate_text(s: &str, max_len: usize) -> String {
+        if s.len() > max_len {
+            format!("{}...", &s[..max_len - 3])
+        } else {
+            s.to_string()
+        }
+    }
+
+    let options: Vec<_> = choices
+        .iter()
+        .enumerate()
+        .map(|(i, choice)| {
+            serenity::CreateSelectMenuOption::new(
+                truncate_text(choice, LABEL_MAX_LEN),
+                i.to_string(),
+            )
+            .emoji(CHOICE_EMOJIS[i].parse::<serenity::ReactionType>().unwrap())
+        })
+        .collect();
+    serenity::CreateSelectMenu::new(
+        format!("{}_poll", ctx.id()),
+        serenity::CreateSelectMenuKind::String { options },
+    )
+    .placeholder("Place your vote")
+    .min_values(0)
+    .max_values(1)
+}
+
+fn format_poll_choice_button(ctx_id: u64, index: usize) -> serenity::CreateButton {
     let custom_id = format_poll_button_custom_id(ctx_id, "choice", Some(index));
     let emoji = CHOICE_EMOJIS[index];
     serenity::CreateButton::new(custom_id)

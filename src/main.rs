@@ -133,6 +133,7 @@ async fn main(
                 commands::register(),
                 commands::roll(),
                 commands::scatter(),
+                commands::set_poll_mode(),
             ],
             ..Default::default()
         })
