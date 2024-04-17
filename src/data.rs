@@ -1,4 +1,7 @@
-use crate::{serenity, Context, Result};
+use crate::{
+    serenity::{self, model::Colour},
+    Context, Result,
+};
 use serde::{Deserialize, Serialize};
 use shuttle_persist::PersistInstance;
 use std::{collections::HashMap, fmt, sync::Mutex};
@@ -6,12 +9,20 @@ use time::{Duration, OffsetDateTime};
 
 pub struct Data {
     writer: PersistInstance,
+    bot_color: Colour,
     buckets: Mutex<Buckets>,
     counters: Mutex<Counters>,
 }
 
 impl Data {
-    pub async fn new(_ctx: &serenity::Context, persist: PersistInstance) -> Result<Self> {
+    pub async fn new(ctx: &serenity::Context, persist: PersistInstance) -> Result<Self> {
+        let bot_color = ctx
+            .http
+            .get_current_user()
+            .await?
+            .accent_colour
+            .unwrap_or(Colour::BLURPLE);
+
         let counters = match persist.load("counters") {
             Ok(x) => Mutex::new(x),
             Err(_) => Default::default(),
@@ -23,9 +34,14 @@ impl Data {
 
         Ok(Self {
             writer: persist,
+            bot_color,
             buckets,
             counters,
         })
+    }
+
+    pub fn bot_color(&self) -> Colour {
+        self.bot_color
     }
 
     pub fn use_counters<F, T>(&self, f: F) -> T
