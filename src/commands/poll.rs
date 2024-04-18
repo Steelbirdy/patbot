@@ -62,13 +62,35 @@ pub async fn poll(ctx: ApplicationContext<'_>) -> Result {
         choices,
         duration,
         privacy,
+        num_choices,
     }) = poise::Modal::execute(ctx).await?
     else {
         // If the user presses "Cancel", we don't follow up
         return Ok(());
     };
 
+    let poll_mode = if num_choices.as_ref().is_some_and(|s| s != "1") {
+        PollMode::Menu
+    } else {
+        ctx.data().poll_mode()
+    };
+
     let is_public = !privacy.is_some_and(|s| !s.is_empty());
+
+    let num_choices_range: Option<(u8, u8)> = match num_choices {
+        Some(s) => match s.split_once("-") {
+            Some((a, b)) => {
+                let lo = a.parse().ok();
+                let hi = b.parse().ok();
+                lo.zip(hi)
+            }
+            None => s.parse().ok().map(|n| (n, n)),
+        },
+        None => Some((1, 1)),
+    };
+    let Some(num_choices_range) = num_choices_range else {
+        send_error!("I didn't understand the number of choices that you entered.")
+    };
 
     // Attempt to parse the poll duration entered by the user
     // TODO: Better error message
@@ -94,7 +116,7 @@ pub async fn poll(ctx: ApplicationContext<'_>) -> Result {
 
     // Build the poll message
     let mut embed = format_poll_embed(ctx, &title, &choices, duration, is_public).await;
-    let action_rows = format_poll_action_rows(ctx, &choices);
+    let action_rows = format_poll_action_rows(ctx, &choices, poll_mode, num_choices_range);
     let message_builder = serenity::CreateMessage::default()
         .embed(embed.clone().into())
         .components(action_rows);
@@ -258,6 +280,8 @@ async fn format_poll_embed(
 fn format_poll_action_rows(
     ctx: ApplicationContext<'_>,
     choices: &[&str],
+    poll_mode: PollMode,
+    num_choices: (u8, u8),
 ) -> Vec<serenity::CreateActionRow> {
     const MAX_BUTTONS_PER_ROW: usize = 5;
 
@@ -267,7 +291,7 @@ fn format_poll_action_rows(
 
     let id = ctx.id();
 
-    let mut rows: Vec<_> = match ctx.data().poll_mode() {
+    let mut rows: Vec<_> = match poll_mode {
         PollMode::Buttons => {
             // Create all the choice buttons in a list
             let mut buttons: Vec<_> = choices
@@ -286,7 +310,7 @@ fn format_poll_action_rows(
                 .collect()
         }
         PollMode::Menu => {
-            let select_menu = format_poll_select_menu(ctx, choices);
+            let select_menu = format_poll_select_menu(ctx, choices, num_choices);
             vec![serenity::CreateActionRow::SelectMenu(select_menu)]
         }
     };
@@ -305,6 +329,7 @@ fn format_poll_action_rows(
 fn format_poll_select_menu(
     ctx: ApplicationContext<'_>,
     choices: &[&str],
+    num_choices: (u8, u8),
 ) -> serenity::CreateSelectMenu {
     const LABEL_MAX_LEN: usize = 100;
 
@@ -332,8 +357,8 @@ fn format_poll_select_menu(
         serenity::CreateSelectMenuKind::String { options },
     )
     .placeholder("Place your vote")
-    .min_values(0)
-    .max_values(1)
+    .min_values(num_choices.0)
+    .max_values(num_choices.1)
 }
 
 fn format_poll_choice_button(ctx_id: u64, index: usize) -> serenity::CreateButton {
@@ -379,6 +404,7 @@ impl From<PollEmbed> for serenity::CreateEmbed {
 }
 
 #[derive(poise::Modal, Debug)]
+#[name = "Create a new poll"]
 struct PollModal {
     #[name = "Title"]
     #[placeholder = "Enter poll title here"]
@@ -388,13 +414,16 @@ struct PollModal {
     #[placeholder = "Enter poll options here, one on each line (maximum of 10)"]
     #[paragraph]
     choices: String,
-    #[name = "Duration"]
-    #[placeholder = r#""30 minutes", "6 hours", "1 day", etc. Defaults to 24 hours"#]
+    #[name = "Duration (default 24 hours)"]
+    #[placeholder = r#""30 minutes", "6 hours", "1 day", etc."#]
     duration: Option<String>,
     #[name = "Private"]
     #[placeholder = "Leave this empty to make the voting public"]
     #[max_length = 1]
     privacy: Option<String>,
+    #[name = "Number of Choices (default 1)"]
+    #[placeholder = r#"How many options can be chosen, e.g. "2", "3-7", etc."#]
+    num_choices: Option<String>,
 }
 
 #[derive(FromStr, Copy, Clone)]
