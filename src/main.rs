@@ -1,5 +1,7 @@
 mod commands;
 mod data;
+mod interactive;
+mod macros;
 
 use data::Data;
 use std::{
@@ -16,25 +18,72 @@ type Result<T = (), E = Error> = std::result::Result<T, E>;
 type Context<'a> = poise::Context<'a, Data, Error>;
 type ApplicationContext<'a> = poise::ApplicationContext<'a, Data, Error>;
 
-const FRODGE_GUILD_ID: serenity::GuildId = serenity::GuildId::new(300755943912636417);
-const TESTING_GUILD_ID: serenity::GuildId = serenity::GuildId::new(765314921151332464);
-
-fn is_frodge(ctx: Context<'_>) -> bool {
-    ctx.guild_id() == Some(FRODGE_GUILD_ID)
+mod prelude {
+    pub(crate) use crate::{
+        macros::{reply_error, respond_to_interaction},
+        serenity, ApplicationContext, Context, PatbotGuild, Result,
+    };
 }
 
-fn is_testing_server(ctx: Context<'_>) -> bool {
-    ctx.guild_id() == Some(TESTING_GUILD_ID)
+#[derive(Copy, Clone)]
+struct PatbotGuild {
+    id: serenity::GuildId,
+    general_voice_channel_id: serenity::ChannelId,
+    bonk_voice_channel_id: serenity::ChannelId,
+    congress_text_channel_id: serenity::ChannelId,
 }
 
-fn is_frodge_or_testing(ctx: Context<'_>) -> bool {
-    is_frodge(ctx) || is_testing_server(ctx)
+impl PatbotGuild {
+    const ALL: &'static [PatbotGuild] = &[Self::FRODGE_GUILD, Self::TESTING_GUILD];
+
+    const FRODGE_GUILD: PatbotGuild = PatbotGuild {
+        id: serenity::GuildId::new(300755943912636417),
+        general_voice_channel_id: serenity::ChannelId::new(300755943912636418),
+        bonk_voice_channel_id: serenity::ChannelId::new(643286466566291496),
+        congress_text_channel_id: serenity::ChannelId::new(384516853386706964),
+    };
+
+    const TESTING_GUILD: PatbotGuild = PatbotGuild {
+        id: serenity::GuildId::new(765314921151332464),
+        general_voice_channel_id: serenity::ChannelId::new(837063735645831188),
+        bonk_voice_channel_id: serenity::ChannelId::new(1202374592983859210),
+        congress_text_channel_id: serenity::ChannelId::new(765314921604710462),
+    };
+
+    fn get(ctx: impl ctx::PatbotGuildContext) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .copied()
+            .find(|guild| ctx.guild_id() == Some(guild.id))
+    }
+}
+
+mod ctx {
+    pub(crate) trait PatbotGuildContext {
+        fn guild_id(&self) -> Option<crate::serenity::GuildId>;
+    }
+
+    impl PatbotGuildContext for crate::Context<'_> {
+        fn guild_id(&self) -> Option<crate::serenity::GuildId> {
+            crate::Context::guild_id(*self)
+        }
+    }
+
+    impl PatbotGuildContext for crate::ApplicationContext<'_> {
+        fn guild_id(&self) -> Option<crate::serenity::GuildId> {
+            crate::ApplicationContext::guild_id(*self)
+        }
+    }
 }
 
 static FRODGE_MEMBERS: OnceLock<HashMap<String, serenity::UserId>> = OnceLock::new();
-
 static FRODGE_ROLES: OnceLock<HashMap<serenity::RoleId, serenity::UserId>> = OnceLock::new();
 static FRODGE_NONPREFERENTIAL_NAMES: OnceLock<HashSet<String>> = OnceLock::new();
+
+fn frodge_membership_count() -> usize {
+    let roles = FRODGE_ROLES.get().unwrap();
+    roles.len()
+}
 
 fn parse_frodge_member(s: &str) -> Option<serenity::UserId> {
     match s.parse::<serenity::Mention>() {
@@ -127,6 +176,7 @@ async fn main(
                 commands::bonk(),
                 commands::counter(),
                 commands::gazoo(),
+                commands::petition(),
                 commands::ping(),
                 commands::poll(),
                 commands::quit(),
@@ -139,6 +189,12 @@ async fn main(
         })
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
+                poise::builtins::register_in_guild(
+                    ctx,
+                    &framework.options().commands,
+                    serenity::GuildId::new(765314921151332464),
+                )
+                .await?;
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
                 Data::new(ctx, persist).await
             })

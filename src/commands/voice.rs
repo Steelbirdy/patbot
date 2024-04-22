@@ -1,41 +1,8 @@
-use crate::{
-    serenity::{self, Mentionable},
-    Context, Result,
-};
+use crate::{prelude::*, serenity::Mentionable};
 use rand::prelude::SliceRandom;
 
-fn general_voice_channel_id(ctx: Context<'_>) -> Option<serenity::ChannelId> {
-    const FRODGE_GENERAL_VOICE_CHANNEL_ID: serenity::ChannelId =
-        serenity::ChannelId::new(300755943912636418);
-    const TESTING_GENERAL_VOICE_CHANNEL_ID: serenity::ChannelId =
-        serenity::ChannelId::new(837063735645831188);
-
-    if crate::is_frodge(ctx) {
-        Some(FRODGE_GENERAL_VOICE_CHANNEL_ID)
-    } else if crate::is_testing_server(ctx) {
-        Some(TESTING_GENERAL_VOICE_CHANNEL_ID)
-    } else {
-        None
-    }
-}
-
-fn bonk_channel_id(ctx: Context<'_>) -> Option<serenity::ChannelId> {
-    const FRODGE_BONK_CHANNEL_ID: serenity::ChannelId =
-        serenity::ChannelId::new(643286466566291496);
-    const TESTING_BONK_CHANNEL_ID: serenity::ChannelId =
-        serenity::ChannelId::new(1202374592983859210);
-
-    if crate::is_frodge(ctx) {
-        Some(FRODGE_BONK_CHANNEL_ID)
-    } else if crate::is_testing_server(ctx) {
-        Some(TESTING_BONK_CHANNEL_ID)
-    } else {
-        None
-    }
-}
-
 async fn bucket_check(ctx: Context<'_>, bucket_name: &'static str) -> Result<bool> {
-    if !crate::is_frodge_or_testing(ctx) {
+    if PatbotGuild::get(ctx).is_none() {
         ctx.defer_ephemeral().await?;
         return Ok(false);
     }
@@ -55,7 +22,7 @@ async fn bucket_check(ctx: Context<'_>, bucket_name: &'static str) -> Result<boo
 }
 
 /// __***BONK***__
-#[poise::command(slash_command)]
+#[poise::command(slash_command, guild_only)]
 pub async fn bonk(
     ctx: Context<'_>,
     #[description = "Mention the user to bonk"]
@@ -76,9 +43,9 @@ pub async fn bonk(
         return Ok(());
     };
 
-    let guild = ctx.guild_id().unwrap();
-    let bonk_channel_id = bonk_channel_id(ctx).unwrap();
-    guild.move_member(ctx, user_id, bonk_channel_id).await?;
+    let guild = PatbotGuild::get(ctx).unwrap();
+    let bonk_channel_id = guild.bonk_voice_channel_id;
+    guild.id.move_member(ctx, user_id, bonk_channel_id).await?;
 
     ctx.reply("__***BONK***__").await?;
     ctx.data().use_buckets(|b| b.record_usage("bonk", ctx));
@@ -87,13 +54,14 @@ pub async fn bonk(
 }
 
 /// __***SCATTER!!!***__
-#[poise::command(slash_command)]
+#[poise::command(slash_command, guild_only)]
 pub async fn scatter(ctx: Context<'_>) -> Result {
     if !bucket_check(ctx, "scatter").await? {
         return Ok(());
     }
 
-    let general_channel_id = general_voice_channel_id(ctx).unwrap();
+    let guild = PatbotGuild::get(ctx).unwrap();
+    let general_channel_id = guild.general_voice_channel_id;
 
     let (vcs, voice_states) = {
         let guild = ctx.guild().unwrap();
@@ -131,11 +99,9 @@ pub async fn scatter(ctx: Context<'_>) -> Result {
         return Ok(());
     }
 
-    let guild_id = ctx.guild_id().unwrap();
-
     for member in voice_states {
         let move_to = vcs.choose(&mut rand::thread_rng()).unwrap();
-        guild_id.move_member(ctx, member, move_to).await?;
+        guild.id.move_member(ctx, member, move_to).await?;
     }
 
     ctx.reply("__***SCATTER!!!***__").await?;

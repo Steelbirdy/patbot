@@ -1,5 +1,5 @@
 use crate::{
-    serenity::{self, model::Colour},
+    serenity::{self, model::Color},
     Context, Result,
 };
 use serde::{Deserialize, Serialize};
@@ -9,7 +9,7 @@ use time::{Duration, OffsetDateTime};
 
 pub struct Data {
     writer: PersistInstance,
-    bot_color: Colour,
+    bot_color: Color,
     poll_mode: Mutex<PollMode>,
     buckets: Mutex<Buckets>,
     counters: Mutex<Counters>,
@@ -31,7 +31,7 @@ impl Data {
             .get_current_user()
             .await?
             .accent_colour
-            .unwrap_or(Colour::BLURPLE);
+            .unwrap_or(Color::BLURPLE);
 
         let counters = match persist.load("counters") {
             Ok(x) => Mutex::new(x),
@@ -51,7 +51,7 @@ impl Data {
         })
     }
 
-    pub fn bot_color(&self) -> Colour {
+    pub fn bot_color(&self) -> Color {
         self.bot_color
     }
 
