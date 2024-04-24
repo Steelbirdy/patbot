@@ -34,6 +34,10 @@ impl Data {
             Ok(x) => Mutex::new(x),
             Err(_) => Default::default(),
         };
+        let reply_commands = match persist.load("reply_commands") {
+            Ok(x) => Mutex::new(x),
+            Err(_) => Default::default(),
+        };
 
         Ok(Self {
             writer: persist,
@@ -41,7 +45,7 @@ impl Data {
             poll_mode: Default::default(),
             buckets,
             counters,
-            reply_commands: Default::default(),
+            reply_commands,
         })
     }
 
@@ -83,31 +87,61 @@ impl Data {
         ret
     }
 
-    pub async fn register_reply_command(&self, ctx: Context<'_>, command: ReplyCommand) -> Result {
-        let new_command = command.to_poise_command();
-        {
-            let mut commands = self.reply_commands.lock().unwrap();
-            commands.insert(command);
-        }
+    pub fn use_reply_commands<F, T>(&self, f: F) -> T
+    where
+        F: FnOnce(&mut ReplyCommands) -> T,
+    {
+        let (ret, reply_commands_clone) = {
+            let mut reply_commands = self.reply_commands.lock().unwrap();
+            let ret = f(&mut reply_commands);
+            (ret, reply_commands.clone())
+        };
+        self.writer
+            .save("reply_commands", reply_commands_clone)
+            .unwrap();
+        ret
+    }
+
+    pub async fn register_reply_command(
+        &self,
+        ctx: Context<'_>,
+        mut reply_command: ReplyCommand,
+    ) -> Result {
+        let new_command = reply_command.to_poise_command();
         let new_commands =
             poise::builtins::create_application_commands(std::slice::from_ref(&new_command));
+        assert_eq!(new_commands.len(), 1);
+        let new_command = &new_commands[0];
         for guild in PatbotGuild::ALL {
-            for command in &new_commands {
-                if let Err(err) = guild.id.create_command(ctx, command.clone()).await {
+            match guild.id.create_command(ctx, new_command.clone()).await {
+                Ok(command) => reply_command.ids.push((guild.id, command.id)),
+                Err(err) => {
+                    tracing::error!(
+                        "failed to create reply command in guild {}: {err:?}",
+                        guild.id
+                    );
                     if Some(guild.id) == ctx.guild_id() {
-                        let _ = ctx
-                            .reply(format!("Failed to create command: {err:?}"))
-                            .await;
+                        let _ = ctx.reply(format!("Failed to create command: {err}")).await;
                     }
                 }
             }
         }
+        self.use_reply_commands(|commands| commands.insert(reply_command));
         Ok(())
     }
 
+    pub async fn delete_reply_command(&self, ctx: Context<'_>, name: &str) -> Result<bool> {
+        let Some(command) = self.use_reply_commands(|commands| commands.remove(name)) else {
+            return Ok(false);
+        };
+        for (guild_id, command_id) in command.ids {
+            guild_id.delete_command(ctx, command_id).await?;
+        }
+        Ok(true)
+    }
+
     pub fn reply_command_response(&self, name: &str) -> Option<ReplyCommandResponse> {
-        let commands = self.reply_commands.lock().unwrap();
-        commands.command_response(name)
+        self.use_reply_commands(|commands| commands.command_response(name))
     }
 }
 
@@ -278,18 +312,42 @@ impl Counters {
     }
 }
 
-#[derive(Default)]
+#[derive(Default, Clone, Serialize, Deserialize)]
 pub struct ReplyCommands {
-    commands: HashMap<String, ReplyCommand>,
+    commands: Vec<ReplyCommand>,
 }
 
 impl ReplyCommands {
     fn insert(&mut self, command: ReplyCommand) {
-        self.commands.insert(command.name.clone(), command);
+        match self
+            .commands
+            .iter_mut()
+            .find(|cmd| cmd.name == command.name)
+        {
+            Some(prev) => {
+                *prev = command;
+            }
+            None => {
+                self.commands.push(command);
+            }
+        }
+    }
+
+    fn remove(&mut self, name: &str) -> Option<ReplyCommand> {
+        let index = self.commands.iter().position(|cmd| cmd.name == name)?;
+        Some(self.commands.swap_remove(index))
     }
 
     fn command_response(&self, name: &str) -> Option<ReplyCommandResponse> {
-        let command = self.commands.get(name)?;
+        let command = self.get(name)?;
         Some(command.response.clone())
+    }
+
+    pub fn get(&self, name: &str) -> Option<&ReplyCommand> {
+        self.commands.iter().find(|cmd| cmd.name == name)
+    }
+
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.commands.iter().map(|cmd| cmd.name.as_str())
     }
 }

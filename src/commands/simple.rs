@@ -21,11 +21,24 @@ pub async fn reply(_ctx: ApplicationContext<'_>) -> Result {
 
 #[poise::command(slash_command)]
 pub async fn create(ctx: ApplicationContext<'_>) -> Result {
+    fn command_exists(ctx: ApplicationContext<'_>, name: &str) -> bool {
+        let dynamic_command_exists = ctx
+            .data()
+            .use_reply_commands(|commands| commands.names().any(|cmd| cmd == name));
+        let static_command_exists = ctx
+            .framework()
+            .options()
+            .commands
+            .iter()
+            .any(|cmd| cmd.name == name);
+        dynamic_command_exists || static_command_exists
+    }
+
     #[derive(poise::Modal)]
     #[name = "Create a new reply command"]
     struct CreateModal {
         #[name = "Command Name"]
-        #[placeholder = "my_command"]
+        #[placeholder = "The name of the command"]
         #[max_length = 20]
         command_name: String,
         #[name = "Command Description"]
@@ -51,7 +64,12 @@ pub async fn create(ctx: ApplicationContext<'_>) -> Result {
         return Ok(());
     };
 
-    // TODO: do not allow existing commands to be overwritten
+    if command_name.contains(|ch: char| ch.is_whitespace()) {
+        reply_error!(ctx, "The command name cannot have any spaces in it.");
+    }
+    if command_exists(ctx, &command_name) {
+        reply_error!(ctx, "A command named `{}` already exists.", command_name);
+    }
 
     if response_text.is_none() && response_attachment_url.is_none() {
         reply_error!(
@@ -68,6 +86,7 @@ pub async fn create(ctx: ApplicationContext<'_>) -> Result {
     let owner = ctx.author().id;
 
     let command = ReplyCommand {
+        ids: Vec::new(),
         name: command_name.clone(),
         description: command_description,
         owner,
@@ -90,20 +109,57 @@ pub async fn create(ctx: ApplicationContext<'_>) -> Result {
     Ok(())
 }
 
+async fn autocomplete_delete_param_command<'a>(
+    ctx: ApplicationContext<'_>,
+    partial: &'a str,
+) -> impl Iterator<Item = String> + 'a {
+    let options: Vec<_> = ctx
+        .data()
+        .use_reply_commands(|commands| commands.names().map(ToString::to_string).collect());
+    options
+        .into_iter()
+        .filter(move |name| name.starts_with(partial))
+}
+
 #[poise::command(slash_command)]
-pub async fn delete(ctx: ApplicationContext<'_>) -> Result {
-    ctx.reply("Not yet implemented.").await?;
+pub async fn delete(
+    ctx: ApplicationContext<'_>,
+    #[description = "The name of the command"]
+    #[autocomplete = "autocomplete_delete_param_command"]
+    command: String,
+) -> Result {
+    let author_is_owner = ctx
+        .data()
+        .use_reply_commands(|commands| commands.get(&command).map(|cmd| cmd.author_is_owner(ctx)));
+    match author_is_owner {
+        None => reply_error!(ctx, "That command does not exist."),
+        Some(false) => reply_error!(ctx, "Only the creator of the command can delete it."),
+        Some(true) => {}
+    }
+
+    let command_existed_and_was_deleted = ctx
+        .data()
+        .delete_reply_command(ctx.into(), &command)
+        .await?;
+    assert!(command_existed_and_was_deleted);
+    ctx.reply(format!(
+        ":white_check_mark: The command `{command}` was deleted."
+    ))
+    .await?;
+
     Ok(())
 }
 
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct ReplyCommand {
+    pub ids: Vec<(serenity::GuildId, serenity::CommandId)>,
     pub name: String,
     pub description: Option<String>,
     pub owner: serenity::UserId,
     pub response: ReplyCommandResponse,
 }
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct ReplyCommandResponse {
     content: Option<String>,
     attachment_url: Option<String>,
