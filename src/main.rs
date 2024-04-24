@@ -17,6 +17,7 @@ type Error = Box<dyn std::error::Error + Send + Sync>;
 type Result<T = (), E = Error> = std::result::Result<T, E>;
 type Context<'a> = poise::Context<'a, Data, Error>;
 type ApplicationContext<'a> = poise::ApplicationContext<'a, Data, Error>;
+type Command = poise::Command<Data, Error>;
 
 mod prelude {
     pub(crate) use crate::{
@@ -194,10 +195,14 @@ async fn main(
                 commands::poll(),
                 commands::quit(),
                 commands::register(),
+                commands::reply(),
                 commands::roll(),
                 commands::scatter(),
                 commands::set_poll_mode(),
             ],
+            event_handler: |ctx, event, framework, data| {
+                Box::pin(dynamic_command_handler(ctx, event, framework, data))
+            },
             ..Default::default()
         })
         .setup(|ctx, _ready, framework| {
@@ -220,4 +225,31 @@ async fn main(
         .map_err(shuttle_runtime::CustomError::new)?;
 
     Ok(client.into())
+}
+
+async fn dynamic_command_handler<'a>(
+    ctx: &'a serenity::Context,
+    event: &'a serenity::FullEvent,
+    _framework: poise::FrameworkContext<'a, Data, Box<dyn std::error::Error + Send + Sync>>,
+    data: &'a Data,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let serenity::FullEvent::InteractionCreate {
+        interaction: serenity::Interaction::Command(interaction),
+    } = event
+    else {
+        return Ok(());
+    };
+
+    let Some(command_response) = data.reply_command_response(&interaction.data.name) else {
+        return Ok(());
+    };
+    let command_response = command_response.into_serenity_response(ctx).await?;
+
+    interaction
+        .create_response(
+            ctx,
+            serenity::CreateInteractionResponse::Message(command_response),
+        )
+        .await?;
+    Ok(())
 }

@@ -1,8 +1,9 @@
 use crate::{
-    serenity::{self, model::Color},
-    Context, Result,
+    commands::{PollMode, ReplyCommand, ReplyCommandResponse},
+    prelude::*,
 };
 use serde::{Deserialize, Serialize};
+use serenity::Color;
 use shuttle_persist::PersistInstance;
 use std::{collections::HashMap, fmt, sync::Mutex};
 use time::{Duration, OffsetDateTime};
@@ -13,15 +14,7 @@ pub struct Data {
     poll_mode: Mutex<PollMode>,
     buckets: Mutex<Buckets>,
     counters: Mutex<Counters>,
-}
-
-#[derive(poise::ChoiceParameter, Default, Debug, Copy, Clone, Eq, PartialEq, Hash)]
-pub enum PollMode {
-    #[default]
-    #[name = "buttons"]
-    Buttons,
-    #[name = "menu"]
-    Menu,
+    reply_commands: Mutex<ReplyCommands>,
 }
 
 impl Data {
@@ -48,6 +41,7 @@ impl Data {
             poll_mode: Default::default(),
             buckets,
             counters,
+            reply_commands: Default::default(),
         })
     }
 
@@ -87,6 +81,33 @@ impl Data {
         };
         self.writer.save("buckets", buckets_clone).unwrap();
         ret
+    }
+
+    pub async fn register_reply_command(&self, ctx: Context<'_>, command: ReplyCommand) -> Result {
+        let new_command = command.to_poise_command();
+        {
+            let mut commands = self.reply_commands.lock().unwrap();
+            commands.insert(command);
+        }
+        let new_commands =
+            poise::builtins::create_application_commands(std::slice::from_ref(&new_command));
+        for guild in PatbotGuild::ALL {
+            for command in &new_commands {
+                if let Err(err) = guild.id.create_command(ctx, command.clone()).await {
+                    if Some(guild.id) == ctx.guild_id() {
+                        let _ = ctx
+                            .reply(format!("Failed to create command: {err:?}"))
+                            .await;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub fn reply_command_response(&self, name: &str) -> Option<ReplyCommandResponse> {
+        let commands = self.reply_commands.lock().unwrap();
+        commands.command_response(name)
     }
 }
 
@@ -254,5 +275,21 @@ impl Counters {
 
     pub fn get(&self, name: impl AsRef<str>) -> Option<u32> {
         self.inner.get(name.as_ref()).copied()
+    }
+}
+
+#[derive(Default)]
+pub struct ReplyCommands {
+    commands: HashMap<String, ReplyCommand>,
+}
+
+impl ReplyCommands {
+    fn insert(&mut self, command: ReplyCommand) {
+        self.commands.insert(command.name.clone(), command);
+    }
+
+    fn command_response(&self, name: &str) -> Option<ReplyCommandResponse> {
+        let command = self.commands.get(name)?;
+        Some(command.response.clone())
     }
 }
