@@ -75,6 +75,7 @@ pub enum ControlFlow {
     Break,
 }
 
+#[allow(unused)]
 impl InteractiveMessage {
     pub fn new() -> Self {
         Self::default()

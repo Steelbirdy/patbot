@@ -128,6 +128,19 @@ fn is_frodge_member(user_id: serenity::UserId) -> bool {
     get_frodge_member(user_id).is_some()
 }
 
+async fn author_name(ctx: Context<'_>) -> String {
+    let guild_id = ctx.guild_id().unwrap();
+    let author = ctx.author();
+    // Attempt to use the user's real name. If that fails, fall back on their nickname, otherwise just use their username
+    match get_frodge_member(author.id) {
+        Some(name) => name.to_string(),
+        None => author
+            .nick_in(ctx, guild_id)
+            .await
+            .unwrap_or_else(|| author.name.clone()),
+    }
+}
+
 #[shuttle_runtime::main]
 async fn main(
     #[shuttle_persist::Persist] persist: PersistInstance,
