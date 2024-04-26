@@ -187,6 +187,7 @@ async fn main(
             },
             commands: vec![
                 commands::bonk(),
+                commands::bonk_context_menu(),
                 commands::counter(),
                 commands::petition(),
                 commands::ping(),

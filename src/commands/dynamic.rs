@@ -2,7 +2,12 @@ use crate::prelude::*;
 
 type Command = poise::Command<crate::Data, crate::Error>;
 
-#[poise::command(slash_command, subcommand_required, subcommands("create", "delete"), rename = "command")]
+#[poise::command(
+    slash_command,
+    subcommand_required,
+    subcommands("create", "delete"),
+    rename = "command"
+)]
 pub async fn reply(_ctx: ApplicationContext<'_>) -> Result {
     unreachable!()
 }
@@ -57,11 +62,10 @@ pub async fn create(ctx: ApplicationContext<'_>) -> Result {
         reply_error!(ctx, "The command name cannot have any spaces in it.");
     }
     if command_exists(ctx, &command_name) {
-        let user_owns_existing_command = ctx
-            .data()
-            .use_reply_commands(|cmds| cmds
-                .get(&command_name)
-                .is_some_and(|cmd| cmd.author_is_owner(ctx)));
+        let user_owns_existing_command = ctx.data().use_reply_commands(|cmds| {
+            cmds.get(&command_name)
+                .is_some_and(|cmd| cmd.author_is_owner(ctx))
+        });
         if user_owns_existing_command {
             reply_error!(ctx, "You have already created a command named `{0}`.\nUse `command delete {0}` to delete it first.", command_name);
         } else {

@@ -1,7 +1,7 @@
 macro_rules! reply_error {
-    ($ctx:ident, $error_message:literal $(, $args:expr)*) => {{
+    ($ctx:ident, $error_message:literal $($tt:tt)*) => {{
         let _ = $ctx.send(poise::CreateReply::default()
-            .content(format!(concat!(":x: ", $error_message) $(, $args)*))
+            .content(format!(concat!(":x: ", $error_message) $($tt)*))
             .reply(true)
             .ephemeral(true))
             .await;
