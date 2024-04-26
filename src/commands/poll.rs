@@ -1,5 +1,4 @@
 use crate::{
-    data::PollMode,
     interactive::{Config as InteractiveConfig, ControlFlow, Interactive, InteractiveMessage},
     prelude::*,
 };
@@ -136,24 +135,26 @@ pub async fn poll(ctx: ApplicationContext<'_>) -> Result {
     Ok(())
 }
 
+#[derive(poise::ChoiceParameter, Default, Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub enum PollMode {
+    #[default]
+    #[name = "buttons"]
+    Buttons,
+    #[name = "menu"]
+    Menu,
+}
+
 pub(in crate::commands) async fn embed_author(
     ctx: ApplicationContext<'_>,
 ) -> serenity::CreateEmbedAuthor {
-    let guild_id = ctx.guild_id().unwrap();
+    let author_name = crate::author_name(ctx.into()).await;
     let author = ctx.author();
-    // Attempt to use the user's real name. If that fails, fall back on their nickname, otherwise just use their username
-    let author_name = match crate::get_frodge_member(author.id) {
-        Some(name) => format!("Started by {name}"),
-        None => author
-            .nick_in(ctx, guild_id)
-            .await
-            .unwrap_or_else(|| author.name.clone()),
-    };
     // Attempt to use the user's avatar, otherwise fall back to a default Discord avatar
     let author_avatar_url = author
         .avatar_url()
         .unwrap_or_else(|| author.default_avatar_url());
-    serenity::CreateEmbedAuthor::new(author_name).icon_url(author_avatar_url)
+    serenity::CreateEmbedAuthor::new(format!("Started by {author_name}"))
+        .icon_url(author_avatar_url)
 }
 
 pub(in crate::commands) fn embed_footer(
