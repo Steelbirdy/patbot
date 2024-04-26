@@ -1,4 +1,4 @@
-use crate::{Context, Result};
+use crate::prelude::*;
 
 /// Pong!
 #[poise::command(slash_command, ephemeral)]
