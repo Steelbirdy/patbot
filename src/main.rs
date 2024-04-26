@@ -25,7 +25,7 @@ mod prelude {
     };
 }
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, serde::Serialize, serde::Deserialize)]
 struct PatbotGuild {
     id: serenity::GuildId,
     general_voice_channel_id: serenity::ChannelId,
@@ -34,24 +34,12 @@ struct PatbotGuild {
 }
 
 impl PatbotGuild {
-    const ALL: &'static [PatbotGuild] = &[Self::FRODGE_GUILD, Self::TESTING_GUILD];
-
-    const FRODGE_GUILD: PatbotGuild = PatbotGuild {
-        id: serenity::GuildId::new(300755943912636417),
-        general_voice_channel_id: serenity::ChannelId::new(300755943912636418),
-        bonk_voice_channel_id: serenity::ChannelId::new(643286466566291496),
-        congress_text_channel_id: serenity::ChannelId::new(384516853386706964),
-    };
-
-    const TESTING_GUILD: PatbotGuild = PatbotGuild {
-        id: serenity::GuildId::new(765314921151332464),
-        general_voice_channel_id: serenity::ChannelId::new(837063735645831188),
-        bonk_voice_channel_id: serenity::ChannelId::new(1202374592983859210),
-        congress_text_channel_id: serenity::ChannelId::new(765314921604710462),
-    };
+    fn all() -> &'static [Self] {
+        FRODGE_GUILDS.get().unwrap()
+    }
 
     fn get(ctx: impl ctx::PatbotGuildContext) -> Option<Self> {
-        Self::ALL
+        Self::all()
             .iter()
             .copied()
             .find(|guild| ctx.guild_id() == Some(guild.id))
@@ -79,6 +67,7 @@ mod ctx {
 static FRODGE_MEMBERS: OnceLock<HashMap<String, serenity::UserId>> = OnceLock::new();
 static FRODGE_ROLES: OnceLock<HashMap<serenity::RoleId, serenity::UserId>> = OnceLock::new();
 static FRODGE_NONPREFERENTIAL_NAMES: OnceLock<HashSet<String>> = OnceLock::new();
+static FRODGE_GUILDS: OnceLock<Vec<PatbotGuild>> = OnceLock::new();
 
 fn frodge_membership_count() -> usize {
     let roles = FRODGE_ROLES.get().unwrap();
@@ -152,13 +141,10 @@ async fn main(
     struct EnvVarNotFound(String);
 
     let env_var = |key: &str| {
-        if let Ok(value) = std::env::var(key) {
-            return Ok(value);
-        }
-        if let Some(value) = secret_store.get(key) {
-            return Ok(value);
-        }
-        Err(EnvVarNotFound(key.to_string()))
+        std::env::var(key)
+            .ok()
+            .or_else(|| secret_store.get(key))
+            .ok_or_else(|| EnvVarNotFound(key.to_string()))
     };
 
     let token = env_var("DISCORD_TOKEN").unwrap();
@@ -174,6 +160,10 @@ async fn main(
     let frodge_nonpreferential_names = env_var("FRODGE_NONPREFERENTIAL_NAMES").unwrap();
     FRODGE_NONPREFERENTIAL_NAMES
         .set(serde_json::from_str(&frodge_nonpreferential_names).unwrap())
+        .unwrap();
+    let frodge_guilds = env_var("FRODGE_GUILDS").unwrap();
+    FRODGE_GUILDS
+        .set(serde_json::from_str(&frodge_guilds).unwrap())
         .unwrap();
 
     let intents =
@@ -222,7 +212,7 @@ async fn main(
                 let mut all_commands = static_commands;
                 all_commands.extend(dynamic_commands);
 
-                for guild in PatbotGuild::ALL {
+                for guild in PatbotGuild::all() {
                     let commands = match guild.id.set_commands(ctx, all_commands.clone()).await {
                         Ok(commands) => commands,
                         Err(err) => {

@@ -132,10 +132,7 @@ impl Data {
                 x.clear_ids();
                 Mutex::new(x)
             }
-            Err(err) => {
-                tracing::error!("error while loading reply commands from file: {err:?}");
-                Default::default()
-            }
+            Err(_) => Default::default(),
         };
 
         Ok(Self {
@@ -167,7 +164,7 @@ impl Data {
             poise::builtins::create_application_commands(std::slice::from_ref(&new_command));
         assert_eq!(new_commands.len(), 1);
         let new_command = &new_commands[0];
-        for guild in PatbotGuild::ALL {
+        for guild in PatbotGuild::all() {
             match guild.id.create_command(ctx, new_command.clone()).await {
                 Ok(command) => reply_command.ids.push((guild.id.get(), command.id.get())),
                 Err(err) => {
