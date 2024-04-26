@@ -128,7 +128,10 @@ impl Data {
             Err(_) => Default::default(),
         };
         let reply_commands = match persist.load::<ReplyCommands>("reply_commands") {
-            Ok(x) => Mutex::new(x),
+            Ok(mut x) => {
+                x.clear_ids();
+                Mutex::new(x)
+            }
             Err(err) => {
                 tracing::error!("error while loading reply commands from file: {err:?}");
                 Default::default()
@@ -405,12 +408,14 @@ impl ReplyCommands {
         Some(command.response.clone())
     }
 
-    pub fn get(&self, name: &str) -> Option<&ReplyCommand> {
-        self.commands.iter().find(|cmd| cmd.name == name)
+    fn clear_ids(&mut self) {
+        for command in self.iter_mut() {
+            command.ids.clear();
+        }
     }
 
-    pub fn names(&self) -> impl Iterator<Item = &str> {
-        self.commands.iter().map(|cmd| cmd.name.as_str())
+    pub fn get(&self, name: &str) -> Option<&ReplyCommand> {
+        self.commands.iter().find(|cmd| cmd.name == name)
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &ReplyCommand> {

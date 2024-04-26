@@ -111,7 +111,7 @@ pub async fn delete(
         .use_reply_commands(|commands| commands.get(&command).map(|cmd| cmd.author_is_owner(ctx)));
     match author_is_owner {
         None => reply_error!(ctx, "That command does not exist."),
-        Some(false) => reply_error!(ctx, "Only the creator of the command can delete it."),
+        Some(false) => reply_error!(ctx, "***Patbot bug***: only the owner of a dynamic command or the bot owner should be able to delete it."),
         Some(true) => {}
     }
 
@@ -128,13 +128,19 @@ pub async fn delete(
     Ok(())
 }
 
+/// Filters commands to only show ones that the author of the interaction can delete, then
+/// autocompletes based on the text they have entered
 async fn autocomplete_delete_param_command<'a>(
     ctx: ApplicationContext<'_>,
     partial: &'a str,
 ) -> impl Iterator<Item = String> + 'a {
-    let options: Vec<_> = ctx
-        .data()
-        .use_reply_commands(|commands| commands.names().map(ToString::to_string).collect());
+    let options: Vec<_> = ctx.data().use_reply_commands(|commands| {
+        commands
+            .iter()
+            .filter(|cmd| cmd.author_is_owner(ctx))
+            .map(|cmd| cmd.name.clone())
+            .collect()
+    });
     options
         .into_iter()
         .filter(move |name| name.starts_with(partial))
