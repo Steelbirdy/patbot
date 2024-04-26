@@ -2,7 +2,7 @@ use crate::prelude::*;
 
 type Command = poise::Command<crate::Data, crate::Error>;
 
-#[poise::command(slash_command, subcommand_required, subcommands("create", "delete"))]
+#[poise::command(slash_command, subcommand_required, subcommands("create", "delete"), rename = "command")]
 pub async fn reply(_ctx: ApplicationContext<'_>) -> Result {
     unreachable!()
 }
@@ -13,7 +13,7 @@ pub async fn create(ctx: ApplicationContext<'_>) -> Result {
     fn command_exists(ctx: ApplicationContext<'_>, name: &str) -> bool {
         let dynamic_command_exists = ctx
             .data()
-            .use_reply_commands(|commands| commands.names().any(|cmd| cmd == name));
+            .use_reply_commands(|commands| commands.iter().any(|cmd| cmd.name == name));
         let static_command_exists = ctx
             .framework()
             .options()
@@ -24,7 +24,7 @@ pub async fn create(ctx: ApplicationContext<'_>) -> Result {
     }
 
     #[derive(poise::Modal)]
-    #[name = "Create a new reply command"]
+    #[name = "Create a new Patbot command"]
     struct CreateModal {
         #[name = "Command Name"]
         #[placeholder = "The name of the command"]
@@ -57,7 +57,16 @@ pub async fn create(ctx: ApplicationContext<'_>) -> Result {
         reply_error!(ctx, "The command name cannot have any spaces in it.");
     }
     if command_exists(ctx, &command_name) {
-        reply_error!(ctx, "A command named `{}` already exists.", command_name);
+        let user_owns_existing_command = ctx
+            .data()
+            .use_reply_commands(|cmds| cmds
+                .get(&command_name)
+                .is_some_and(|cmd| cmd.author_is_owner(ctx)));
+        if user_owns_existing_command {
+            reply_error!(ctx, "You have already created a command named `{0}`.\nUse `command delete {0}` to delete it first.", command_name);
+        } else {
+            reply_error!(ctx, "A command named `{}` already exists.", command_name);
+        }
     }
 
     if response_text.is_none() && response_attachment_url.is_none() {
