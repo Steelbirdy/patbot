@@ -1,4 +1,4 @@
-use crate::{Context, Result};
+use crate::prelude::*;
 
 #[poise::command(slash_command, subcommands("add", "get", "create", "delete"))]
 pub async fn counter(ctx: Context<'_>, name: String) -> Result {
@@ -7,7 +7,7 @@ pub async fn counter(ctx: Context<'_>, name: String) -> Result {
 
 #[poise::command(slash_command)]
 pub async fn add(ctx: Context<'_>, name: String, n: u32) -> Result {
-    let new_value = &ctx.data().use_counters(|c| c.add(&name, n));
+    let new_value = &ctx.data().use_counters_mut(|c| c.add(&name, n));
 
     match new_value {
         Some(value) => {
@@ -17,10 +17,11 @@ pub async fn add(ctx: Context<'_>, name: String, n: u32) -> Result {
             .await?;
         }
         None => {
-            ctx.send(poise::CreateReply::default()
-                .content(format!("That counter does not exist. You can create it using `counter create {name}`."))
-                .ephemeral(true)
-                .reply(true)).await?;
+            reply_error!(
+                ctx,
+                "That counter does not exist. You can create it using `counter create {}`.",
+                name
+            );
         }
     }
     Ok(())
@@ -41,11 +42,11 @@ async fn get_inner(ctx: Context<'_>, name: String) -> Result {
             .await?;
         }
         None => {
-            ctx.send(poise::CreateReply::default()
-                .content(format!("That counter does not exist. You can create it using `counter create {name}`."))
-                .ephemeral(true)
-                .reply(true))
-                .await?;
+            reply_error!(
+                ctx,
+                "That counter does not exist. You can create it using `counter create {}`.",
+                name
+            );
         }
     }
     Ok(())
@@ -53,15 +54,9 @@ async fn get_inner(ctx: Context<'_>, name: String) -> Result {
 
 #[poise::command(slash_command)]
 pub async fn create(ctx: Context<'_>, name: String) -> Result {
-    let already_existed = ctx.data().use_counters(|c| !c.create(&name));
+    let already_existed = ctx.data().use_counters_mut(|c| !c.create(&name));
     if already_existed {
-        ctx.send(
-            poise::CreateReply::default()
-                .content("That counter already exists!")
-                .ephemeral(true)
-                .reply(true),
-        )
-        .await?;
+        reply_error!(ctx, "That counter already exists!");
     } else {
         ctx.reply(format!("Created counter `{name}`.")).await?;
     }
@@ -70,17 +65,11 @@ pub async fn create(ctx: Context<'_>, name: String) -> Result {
 
 #[poise::command(slash_command, owners_only)]
 pub async fn delete(ctx: Context<'_>, name: String) -> Result {
-    let was_deleted = ctx.data().use_counters(|c| c.delete(&name));
+    let was_deleted = ctx.data().use_counters_mut(|c| c.delete(&name));
     if was_deleted {
         ctx.reply(format!("Deleted counter `{name}`.")).await?;
     } else {
-        ctx.send(
-            poise::CreateReply::default()
-                .content("That counter does not exist.")
-                .ephemeral(true)
-                .reply(true),
-        )
-        .await?;
+        reply_error!(ctx, "That counter does not exist.");
     }
 
     Ok(())

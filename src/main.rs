@@ -17,7 +17,6 @@ type Error = Box<dyn std::error::Error + Send + Sync>;
 type Result<T = (), E = Error> = std::result::Result<T, E>;
 type Context<'a> = poise::Context<'a, Data, Error>;
 type ApplicationContext<'a> = poise::ApplicationContext<'a, Data, Error>;
-type Command = poise::Command<Data, Error>;
 
 mod prelude {
     pub(crate) use crate::{
@@ -189,7 +188,6 @@ async fn main(
             commands: vec![
                 commands::bonk(),
                 commands::counter(),
-                commands::gazoo(),
                 commands::petition(),
                 commands::ping(),
                 commands::poll(),
@@ -207,14 +205,50 @@ async fn main(
         })
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
-                poise::builtins::register_in_guild(
-                    ctx,
-                    &framework.options().commands,
-                    serenity::GuildId::new(765314921151332464),
-                )
-                .await?;
-                poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                Data::new(ctx, persist).await
+                let data = Data::new(ctx, persist).await?;
+
+                let static_commands =
+                    poise::builtins::create_application_commands(&framework.options().commands);
+                let static_command_count = static_commands.len();
+
+                let dynamic_commands: Vec<_> = data.use_reply_commands(|cmds| {
+                    cmds.iter().map(|cmd| cmd.to_poise_command()).collect()
+                });
+                let dynamic_commands =
+                    poise::builtins::create_application_commands(&dynamic_commands);
+                let dynamic_command_count = dynamic_commands.len();
+
+                let mut all_commands = static_commands;
+                all_commands.extend(dynamic_commands);
+
+                for guild in PatbotGuild::ALL {
+                    let commands = match guild.id.set_commands(ctx, all_commands.clone()).await {
+                        Ok(commands) => commands,
+                        Err(err) => {
+                            tracing::warn!(
+                                "error while registering commands for guild {}: {err:?}",
+                                guild.id
+                            );
+                            continue;
+                        }
+                    };
+
+                    let dynamic_commands = commands.iter().skip(static_command_count);
+                    assert_eq!(dynamic_commands.len(), dynamic_command_count);
+                    if dynamic_command_count != 0 {
+                        data.use_reply_commands_mut(|reply_commands| {
+                            for (reply_command, dyn_command) in
+                                reply_commands.iter_mut().zip(dynamic_commands)
+                            {
+                                reply_command
+                                    .ids
+                                    .push((guild.id.get(), dyn_command.id.get()));
+                            }
+                        });
+                    }
+                }
+
+                Ok(data)
             })
         })
         .build();

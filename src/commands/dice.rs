@@ -1,4 +1,4 @@
-use crate::{serenity, Context, Result};
+use crate::prelude::*;
 
 /// Rolls dice in XdY format
 #[poise::command(slash_command)]
@@ -46,13 +46,7 @@ pub async fn roll(
             .await?;
         }
         Err(err) => {
-            ctx.send(
-                poise::CreateReply::default()
-                    .content(format!("Error: {err}"))
-                    .ephemeral(true)
-                    .reply(true),
-            )
-            .await?;
+            reply_error!(ctx, "Error: {}", err);
         }
     }
 

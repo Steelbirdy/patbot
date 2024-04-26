@@ -1,24 +1,13 @@
 use crate::prelude::*;
 
-#[poise::command(slash_command)]
-pub async fn gazoo(ctx: Context<'_>) -> Result {
-    let attachment = serenity::CreateAttachment::url(ctx, "https://cdn.discordapp.com/attachments/625764441862045718/655904066341437450/gazoo.png?ex=65d28943&is=65c01443&hm=9f55237dcec69b117cbc23ead93826dc36f7968a58cfb5f7c37f8abe8477d494&").await?;
-    ctx.send(
-        poise::CreateReply::default()
-            .reply(true)
-            .content("***OOOOUWWUH***")
-            .attachment(attachment),
-    )
-    .await?;
-
-    Ok(())
-}
+type Command = poise::Command<crate::Data, crate::Error>;
 
 #[poise::command(slash_command, subcommand_required, subcommands("create", "delete"))]
 pub async fn reply(_ctx: ApplicationContext<'_>) -> Result {
     unreachable!()
 }
 
+/// Create a new Patbot command
 #[poise::command(slash_command)]
 pub async fn create(ctx: ApplicationContext<'_>) -> Result {
     fn command_exists(ctx: ApplicationContext<'_>, name: &str) -> bool {
@@ -89,7 +78,7 @@ pub async fn create(ctx: ApplicationContext<'_>) -> Result {
         ids: Vec::new(),
         name: command_name.clone(),
         description: command_description,
-        owner,
+        owner: owner.get(),
         response,
     };
 
@@ -100,7 +89,7 @@ pub async fn create(ctx: ApplicationContext<'_>) -> Result {
     ctx.send(
         poise::CreateReply::default()
             .content(format!(
-                ":white_check_mark: created command `{command_name}`."
+                ":white_check_mark:  created command `{command_name}`."
             ))
             .reply(true),
     )
@@ -109,18 +98,7 @@ pub async fn create(ctx: ApplicationContext<'_>) -> Result {
     Ok(())
 }
 
-async fn autocomplete_delete_param_command<'a>(
-    ctx: ApplicationContext<'_>,
-    partial: &'a str,
-) -> impl Iterator<Item = String> + 'a {
-    let options: Vec<_> = ctx
-        .data()
-        .use_reply_commands(|commands| commands.names().map(ToString::to_string).collect());
-    options
-        .into_iter()
-        .filter(move |name| name.starts_with(partial))
-}
-
+/// Delete a Patbot command that you created
 #[poise::command(slash_command)]
 pub async fn delete(
     ctx: ApplicationContext<'_>,
@@ -150,12 +128,26 @@ pub async fn delete(
     Ok(())
 }
 
+async fn autocomplete_delete_param_command<'a>(
+    ctx: ApplicationContext<'_>,
+    partial: &'a str,
+) -> impl Iterator<Item = String> + 'a {
+    let options: Vec<_> = ctx
+        .data()
+        .use_reply_commands(|commands| commands.names().map(ToString::to_string).collect());
+    options
+        .into_iter()
+        .filter(move |name| name.starts_with(partial))
+}
+
+/// We use u64 instead of the relevant serenity::*Id because they don't deserialize correctly
+///  when using `shuttle_persist`.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct ReplyCommand {
-    pub ids: Vec<(serenity::GuildId, serenity::CommandId)>,
+    pub ids: Vec<(u64, u64)>,
     pub name: String,
     pub description: Option<String>,
-    pub owner: serenity::UserId,
+    pub owner: u64,
     pub response: ReplyCommandResponse,
 }
 
@@ -189,10 +181,10 @@ impl ReplyCommandResponse {
 impl ReplyCommand {
     pub fn author_is_owner(&self, ctx: ApplicationContext<'_>) -> bool {
         let user = ctx.author().id;
-        self.owner == user || ctx.framework.options.owners.contains(&user)
+        self.owner == user.get() || ctx.framework.options.owners.contains(&user)
     }
 
-    pub fn to_poise_command(&self) -> crate::Command {
+    pub fn to_poise_command(&self) -> Command {
         async fn inner(ctx: Context<'_>, name: &str) -> Result {
             let response = ctx.data().reply_command_response(name).unwrap();
             let response = response.into_serenity_response(ctx).await?;
@@ -206,7 +198,7 @@ impl ReplyCommand {
         }
 
         let name = self.name.clone();
-        crate::Command {
+        Command {
             prefix_action: None,
             slash_action: Some(|ctx: ApplicationContext<'_>| {
                 Box::pin(async move {
