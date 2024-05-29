@@ -30,6 +30,7 @@ struct PatbotGuild {
     id: serenity::GuildId,
     general_voice_channel_id: serenity::ChannelId,
     bonk_voice_channel_id: serenity::ChannelId,
+    bonk_text_channel_id: serenity::ChannelId,
     congress_text_channel_id: serenity::ChannelId,
 }
 
@@ -197,48 +198,7 @@ async fn main(
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
                 let data = Data::new(ctx, persist).await?;
-
-                let static_commands =
-                    poise::builtins::create_application_commands(&framework.options().commands);
-                let static_command_count = static_commands.len();
-
-                let dynamic_commands: Vec<_> = data.use_reply_commands(|cmds| {
-                    cmds.iter().map(|cmd| cmd.to_poise_command()).collect()
-                });
-                let dynamic_commands =
-                    poise::builtins::create_application_commands(&dynamic_commands);
-                let dynamic_command_count = dynamic_commands.len();
-
-                let mut all_commands = static_commands;
-                all_commands.extend(dynamic_commands);
-
-                for guild in PatbotGuild::all() {
-                    let commands = match guild.id.set_commands(ctx, all_commands.clone()).await {
-                        Ok(commands) => commands,
-                        Err(err) => {
-                            tracing::warn!(
-                                "error while registering commands for guild {}: {err:?}",
-                                guild.id
-                            );
-                            continue;
-                        }
-                    };
-
-                    let dynamic_commands = commands.iter().skip(static_command_count);
-                    assert_eq!(dynamic_commands.len(), dynamic_command_count);
-                    if dynamic_command_count != 0 {
-                        data.use_reply_commands_mut(|reply_commands| {
-                            for (reply_command, dyn_command) in
-                                reply_commands.iter_mut().zip(dynamic_commands)
-                            {
-                                reply_command
-                                    .ids
-                                    .push((guild.id.get(), dyn_command.id.get()));
-                            }
-                        });
-                    }
-                }
-
+                register_commands(ctx, &data, framework).await?;
                 Ok(data)
             })
         })
@@ -250,6 +210,55 @@ async fn main(
         .map_err(shuttle_runtime::CustomError::new)?;
 
     Ok(client.into())
+}
+
+async fn register_commands(
+    ctx: &serenity::Context,
+    data: &Data,
+    framework: &poise::Framework<Data, Error>,
+) -> Result {
+    let static_commands =
+        poise::builtins::create_application_commands(&framework.options().commands);
+    let static_command_count = static_commands.len();
+
+    let dynamic_commands: Vec<_> = data.use_reply_commands(|cmds| {
+        cmds.iter()
+            .map(commands::ReplyCommand::to_poise_command)
+            .collect()
+    });
+    let dynamic_commands = poise::builtins::create_application_commands(&dynamic_commands);
+    let dynamic_command_count = dynamic_commands.len();
+
+    let mut all_commands = static_commands;
+    all_commands.extend(dynamic_commands);
+
+    for guild in PatbotGuild::all() {
+        let commands = match guild.id.set_commands(ctx, all_commands.clone()).await {
+            Ok(commands) => commands,
+            Err(err) => {
+                tracing::warn!(
+                    "error while registering commands for guild {}: {err:?}",
+                    guild.id
+                );
+                continue;
+            }
+        };
+
+        let dynamic_commands = commands.iter().skip(static_command_count);
+        assert_eq!(dynamic_commands.len(), dynamic_command_count);
+        if dynamic_command_count != 0 {
+            data.use_reply_commands_mut(|reply_commands| {
+                for (reply_command, dyn_command) in reply_commands.iter_mut().zip(dynamic_commands)
+                {
+                    reply_command
+                        .ids
+                        .push((guild.id.get(), dyn_command.id.get()));
+                }
+            });
+        }
+    }
+
+    Ok(())
 }
 
 async fn dynamic_command_handler<'a>(

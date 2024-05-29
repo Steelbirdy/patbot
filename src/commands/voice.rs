@@ -24,7 +24,8 @@ async fn bucket_check(ctx: Context<'_>, bucket_name: &'static str) -> Result<boo
 
 #[poise::command(context_menu_command = "Bonk", rename = "bonk")]
 pub async fn bonk_context_menu(ctx: Context<'_>, who: serenity::User) -> Result {
-    bonk_impl(ctx, who.id).await
+    let guild = PatbotGuild::get(ctx).unwrap();
+    bonk_impl(ctx, who.id, guild.bonk_text_channel_id).await
 }
 
 /// __***BONK***__
@@ -50,10 +51,14 @@ Alternatively, you can right-click on their profile picture, then go to "Apps", 
             id = bot_owner_id.mention(),
         );
     };
-    bonk_impl(ctx, user_id).await
+    bonk_impl(ctx, user_id, ctx.channel_id()).await
 }
 
-async fn bonk_impl(ctx: Context<'_>, user_id: serenity::UserId) -> Result {
+async fn bonk_impl(
+    ctx: Context<'_>,
+    user_id: serenity::UserId,
+    channel_id: serenity::ChannelId,
+) -> Result {
     if !bucket_check(ctx, "bonk").await? {
         return Ok(());
     }
@@ -66,7 +71,12 @@ async fn bonk_impl(ctx: Context<'_>, user_id: serenity::UserId) -> Result {
         reply_error!(ctx, "That user is not currently in a voice channel.");
     }
 
-    ctx.reply("__***BONK***__").await?;
+    channel_id
+        .send_message(
+            ctx,
+            serenity::CreateMessage::default().content("__***BONK***__"),
+        )
+        .await?;
     ctx.data().use_buckets_mut(|b| b.record_usage("bonk", ctx));
 
     Ok(())

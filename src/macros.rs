@@ -7,6 +7,14 @@ macro_rules! reply_error {
             .await;
         return Ok(());
     }};
+    ($ctx:ident, $channel_id:expr, $error_message:literal $($tt:tt)*) => {{
+        let _ = $channel_id.send(poise::CreateReply::default()
+            .content(format!(concat!(":x: ", $error_message) $($tt)*))
+            .reply(true)
+            .ephemeral(true))
+            .await;
+        return Ok(());
+    }};
 }
 
 macro_rules! respond_to_interaction {
