@@ -2,6 +2,12 @@ use crate::prelude::*;
 use rand::prelude::SliceRandom;
 use serenity::Mentionable;
 
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+enum BonkKind {
+    Command,
+    ContextMenu,
+}
+
 async fn bucket_check(ctx: Context<'_>, bucket_name: &'static str) -> Result<bool> {
     if PatbotGuild::get(ctx).is_none() {
         ctx.defer_ephemeral().await?;
@@ -25,7 +31,7 @@ async fn bucket_check(ctx: Context<'_>, bucket_name: &'static str) -> Result<boo
 #[poise::command(context_menu_command = "Bonk", rename = "bonk")]
 pub async fn bonk_context_menu(ctx: Context<'_>, who: serenity::User) -> Result {
     let guild = PatbotGuild::get(ctx).unwrap();
-    bonk_impl(ctx, who.id, guild.bonk_text_channel_id).await
+    bonk_impl(ctx, who.id, guild.bonk_text_channel_id, BonkKind::ContextMenu).await
 }
 
 /// __***BONK***__
@@ -51,13 +57,14 @@ Alternatively, you can right-click on their profile picture, then go to "Apps", 
             id = bot_owner_id.mention(),
         );
     };
-    bonk_impl(ctx, user_id, ctx.channel_id()).await
+    bonk_impl(ctx, user_id, ctx.channel_id(), BonkKind::Command).await
 }
 
 async fn bonk_impl(
     ctx: Context<'_>,
     user_id: serenity::UserId,
     channel_id: serenity::ChannelId,
+    kind: BonkKind,
 ) -> Result {
     if !bucket_check(ctx, "bonk").await? {
         return Ok(());
@@ -71,10 +78,18 @@ async fn bonk_impl(
         reply_error!(ctx, "That user is not currently in a voice channel.");
     }
 
+    let content = match kind {
+        BonkKind::Command => String::from("__***BONK***__"),
+        BonkKind::ContextMenu => {
+            let author = crate::get_frodge_member(ctx.author().id).unwrap();  
+            format!("__***BONK***__ (used by {author})")
+        }
+    };
+    
     channel_id
         .send_message(
             ctx,
-            serenity::CreateMessage::default().content("__***BONK***__"),
+            serenity::CreateMessage::default().content(content),
         )
         .await?;
     ctx.data().use_buckets_mut(|b| b.record_usage("bonk", ctx));
