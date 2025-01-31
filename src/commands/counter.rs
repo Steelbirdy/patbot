@@ -1,12 +1,19 @@
 use crate::prelude::*;
 
 #[poise::command(slash_command, subcommands("add", "get", "create", "delete"))]
-pub async fn counter(ctx: Context<'_>, name: String) -> Result {
+pub async fn counter(
+    ctx: Context<'_>,
+    #[autocomplete = "autocomplete_name"] name: String,
+) -> Result {
     get_inner(ctx, name).await
 }
 
 #[poise::command(slash_command)]
-pub async fn add(ctx: Context<'_>, name: String, n: u32) -> Result {
+pub async fn add(
+    ctx: Context<'_>,
+    #[autocomplete = "autocomplete_name"] name: String,
+    n: u32,
+) -> Result {
     let new_value = &ctx.data().use_counters_mut(|c| c.add(&name, n));
 
     match new_value {
@@ -28,7 +35,7 @@ pub async fn add(ctx: Context<'_>, name: String, n: u32) -> Result {
 }
 
 #[poise::command(slash_command)]
-pub async fn get(ctx: Context<'_>, name: String) -> Result {
+pub async fn get(ctx: Context<'_>, #[autocomplete = "autocomplete_name"] name: String) -> Result {
     get_inner(ctx, name).await
 }
 
@@ -64,7 +71,10 @@ pub async fn create(ctx: Context<'_>, name: String) -> Result {
 }
 
 #[poise::command(slash_command, owners_only)]
-pub async fn delete(ctx: Context<'_>, name: String) -> Result {
+pub async fn delete(
+    ctx: Context<'_>,
+    #[autocomplete = "autocomplete_name"] name: String,
+) -> Result {
     let was_deleted = ctx.data().use_counters_mut(|c| c.delete(&name));
     if was_deleted {
         ctx.reply(format!("Deleted counter `{name}`.")).await?;
@@ -73,4 +83,16 @@ pub async fn delete(ctx: Context<'_>, name: String) -> Result {
     }
 
     Ok(())
+}
+
+async fn autocomplete_name<'a>(
+    ctx: Context<'_>,
+    partial: &'a str,
+) -> impl Iterator<Item = String> + 'a {
+    let counter_names: Vec<_> = ctx
+        .data()
+        .use_counters(|c| c.names().map(str::to_owned).collect());
+    counter_names
+        .into_iter()
+        .filter(move |name| name.starts_with(partial))
 }

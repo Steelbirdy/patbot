@@ -372,6 +372,10 @@ impl Counters {
     pub fn get(&self, name: impl AsRef<str>) -> Option<u32> {
         self.inner.get(name.as_ref()).copied()
     }
+
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.inner.keys().map(String::as_str)
+    }
 }
 
 #[derive(Default, Clone, Serialize, Deserialize)]

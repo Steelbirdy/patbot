@@ -58,7 +58,7 @@ pub async fn poll(ctx: ApplicationContext<'_>) -> Result {
         reply_error!(ctx, "The duration cannot be longer than one week.");
     }
 
-    let public_voting = !privacy.is_some_and(|s| !s.is_empty());
+    let public_voting = privacy.is_none_or(|s| s.is_empty());
 
     // Valid formats are "#" or "#-#"
     let max_allowed_choices = num_choices.map_or(Ok(1_u8), |s| s.parse());

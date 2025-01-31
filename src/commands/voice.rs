@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use rand::prelude::SliceRandom;
+use rand::prelude::IndexedRandom;
 use serenity::Mentionable;
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
@@ -31,7 +31,13 @@ async fn bucket_check(ctx: Context<'_>, bucket_name: &'static str) -> Result<boo
 #[poise::command(context_menu_command = "Bonk", rename = "bonk")]
 pub async fn bonk_context_menu(ctx: Context<'_>, who: serenity::User) -> Result {
     let guild = PatbotGuild::get(ctx).unwrap();
-    bonk_impl(ctx, who.id, guild.bonk_text_channel_id, BonkKind::ContextMenu).await
+    bonk_impl(
+        ctx,
+        who.id,
+        guild.bonk_text_channel_id,
+        BonkKind::ContextMenu,
+    )
+    .await
 }
 
 /// __***BONK***__
@@ -81,16 +87,13 @@ async fn bonk_impl(
     let content = match kind {
         BonkKind::Command => String::from("__***BONK***__"),
         BonkKind::ContextMenu => {
-            let author = crate::get_frodge_member(ctx.author().id).unwrap();  
+            let author = crate::get_frodge_member(ctx.author().id).unwrap();
             format!("__***BONK***__ (used by {author})")
         }
     };
-    
+
     channel_id
-        .send_message(
-            ctx,
-            serenity::CreateMessage::default().content(content),
-        )
+        .send_message(ctx, serenity::CreateMessage::default().content(content))
         .await?;
     ctx.data().use_buckets_mut(|b| b.record_usage("bonk", ctx));
 
@@ -138,7 +141,7 @@ pub async fn scatter(ctx: Context<'_>) -> Result {
     }
 
     for member in voice_states {
-        let move_to = vcs.choose(&mut rand::thread_rng()).unwrap();
+        let move_to = vcs.choose(&mut rand::rng()).unwrap();
         guild.id.move_member(ctx, member, move_to).await?;
     }
 

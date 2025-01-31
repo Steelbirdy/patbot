@@ -58,7 +58,7 @@ pub async fn create(ctx: ApplicationContext<'_>) -> Result {
         return Ok(());
     };
 
-    if command_name.contains(|ch: char| ch.is_whitespace()) {
+    if command_name.contains(char::is_whitespace) {
         reply_error!(ctx, "The command name cannot have any spaces in it.");
     }
     if command_exists(ctx, &command_name) {

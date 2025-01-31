@@ -5,3 +5,6 @@ counters.json
 .shuttle-storage
 Secrets.toml
 /.idea
+/target
+.shuttle*
+Secrets*.toml
