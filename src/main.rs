@@ -187,6 +187,7 @@ async fn main(
                 commands::register(),
                 commands::reply(),
                 commands::roll(),
+                commands::roll_wildsea(),
                 commands::scatter(),
                 commands::set_poll_mode(),
             ],
