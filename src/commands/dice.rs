@@ -106,16 +106,17 @@ pub async fn roll_wildsea(
         .windows(2)
         .any(|w| w[0] == w[1]);
     
-    let mut message = match highest_roll {
-        1..=3 => "Disaster".to_string(),
-        4..=5 => "Conflict".to_string(),
-        6 => "Triumph".to_string(),
+    let has_doubles = if has_doubles {
+        "... with a twist"
+    } else {
+        ""
+    };
+    let message = match highest_roll {
+        1..=3 => format!("Disaster{has_doubles}!"),
+        4..=5 => format!("Conflict{has_doubles}!"),
+        6 => format!("Triumph{has_doubles}!"),
         _ => unreachable!(),
     };
-    if has_doubles {
-        message.push_str("... with a twist");
-    }
-    message.push('!');
     
     let rolls = all_rolls
         .iter()
